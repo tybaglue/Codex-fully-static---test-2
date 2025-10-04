@@ -15,7 +15,9 @@
   <body class="order-form-page">
     <main class="order-page">
       <header class="order-header">
-        <a href="index.html" class="ghost-button back-link">← Florist dashboard</a>
+        <a href="index.html" class="ghost-button back-link"
+          >← Florist dashboard</a
+        >
         <div class="brand">
           <span class="brand-mark">K</span>
           <div>
@@ -24,8 +26,8 @@
           </div>
         </div>
         <p class="order-intro">
-          Thank you for trusting us with your flowers. Share your delivery details below and
-          our florist will confirm your order shortly.
+          Thank you for trusting us with your flowers. Share your delivery
+          details below and our florist will confirm your order shortly.
         </p>
       </header>
 
@@ -39,8 +41,8 @@
           <input id="clientPhone" name="clientPhone" type="tel" required />
         </div>
         <div class="input-group">
-          <label for="clientEmail">Email (optional)</label>
-          <input id="clientEmail" name="clientEmail" type="email" />
+          <label for="clientEmail">Email</label>
+          <input id="clientEmail" name="clientEmail" type="email" required />
         </div>
         <div class="input-group">
           <label for="deliveryDate">Preferred delivery date</label>
@@ -67,13 +69,16 @@
           ></textarea>
         </div>
         <div class="input-group">
-          <label for="notes">Anything else we should know?</label>
+          <label for="notes">Card message</label>
           <textarea id="notes" name="notes" rows="3"></textarea>
         </div>
-        <button class="primary-button" type="submit">Submit order request</button>
+        <button class="primary-button" type="submit">
+          Submit order request
+        </button>
       </form>
       <p class="order-footer">
-        We will review and confirm your order via WhatsApp or email within 24 hours.
+        We will review and confirm your order via WhatsApp or email within 24
+        hours.
       </p>
     </main>
 

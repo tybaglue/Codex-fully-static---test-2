@@ -28,10 +28,10 @@
 
     <main>
       <section class="hero">
-        <h1>Good day, florist!</h1>
+        <h1>Good day, Bay!</h1>
         <p>
-          Track client details, manage bouquet orders, and stay on top of delivery
-          commitments. Built for fast updates from your phone.
+          Track client details, manage bouquet orders, and stay on top of
+          delivery commitments. Built for fast updates from your phone.
         </p>
         <div class="hero-actions">
           <button id="addOrderButton" class="primary-button">
@@ -92,7 +92,12 @@
       <form id="orderForm" method="dialog">
         <header>
           <h2 id="orderFormTitle">New order</h2>
-          <button type="button" class="ghost-button" id="closeDialog" aria-label="Close">
+          <button
+            type="button"
+            class="ghost-button"
+            id="closeDialog"
+            aria-label="Close"
+          >
             ✕
           </button>
         </header>
@@ -115,7 +120,12 @@
           </div>
           <div class="input-group span-2">
             <label for="orderDetails">Order details</label>
-            <textarea id="orderDetails" name="orderDetails" rows="3" required></textarea>
+            <textarea
+              id="orderDetails"
+              name="orderDetails"
+              rows="3"
+              required
+            ></textarea>
           </div>
           <div class="input-group span-2">
             <label for="deliveryAddress">Delivery address</label>
@@ -140,7 +150,9 @@
           </div>
         </section>
         <footer>
-          <button class="ghost-button" type="button" id="deleteOrder">Delete</button>
+          <button class="ghost-button" type="button" id="deleteOrder">
+            Delete
+          </button>
           <button class="primary-button" type="submit">Save order</button>
         </footer>
       </form>
