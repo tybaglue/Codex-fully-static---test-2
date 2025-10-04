@@ -9,6 +9,12 @@ import {
 const PLACEHOLDER_URL = "https://your-project.supabase.co";
 const PLACEHOLDER_KEY = "public-anon-key";
 
+const DELIVERY_TIME_SLOTS = [
+  { value: "10am-12pm", label: "10am – 12pm" },
+  { value: "1pm-3pm", label: "1pm – 3pm" },
+  { value: "self-pickup", label: "Self pickup" },
+];
+
 const addOrderButton = document.getElementById("addOrderButton");
 const ordersList = document.getElementById("ordersList");
 const clientsList = document.getElementById("clientsList");
@@ -16,6 +22,15 @@ const calendarList = document.getElementById("calendarList");
 const orderDialog = document.getElementById("orderDialog");
 const orderForm = document.getElementById("orderForm");
 const orderFormTitle = document.getElementById("orderFormTitle");
+const modalOverlay = orderDialog
+  ? orderDialog.querySelector("[data-close-dialog]")
+  : null;
+const modalContent = orderDialog
+  ? orderDialog.querySelector(".modal-content")
+  : null;
+const bouquetTypeSelect = document.getElementById("bouquetType");
+const priceHkdInput = document.getElementById("priceHkd");
+const deliveryTimeSelect = document.getElementById("deliveryTimeSlot");
 const deleteOrderButton = document.getElementById("deleteOrder");
 const closeDialogButton = document.getElementById("closeDialog");
 const statusFilter = document.getElementById("statusFilter");
@@ -89,6 +104,38 @@ function formatLongDate(isoDate) {
   });
 }
 
+function ensureBouquetOption(value) {
+  if (!bouquetTypeSelect || !value) return;
+  const exists = [...bouquetTypeSelect.options].some(
+    (option) => option.value === value
+  );
+  if (!exists) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    bouquetTypeSelect.appendChild(option);
+  }
+}
+
+function ensureDeliveryTimeOption(value, label = value) {
+  if (!deliveryTimeSelect || !value) return;
+  const exists = [...deliveryTimeSelect.options].some(
+    (option) => option.value === value
+  );
+  if (!exists) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    deliveryTimeSelect.appendChild(option);
+  }
+}
+
+function formatDeliveryTimeSlot(slotValue) {
+  if (!slotValue) return "";
+  const match = DELIVERY_TIME_SLOTS.find((slot) => slot.value === slotValue);
+  return match ? slot.label : slotValue;
+}
+
 function clearList(list) {
   while (list.firstChild) {
     list.removeChild(list.firstChild);
@@ -115,9 +162,14 @@ function renderOrders() {
   filteredOrders.forEach((order) => {
     const clone = template.content.firstElementChild.cloneNode(true);
     clone.querySelector(".card-title").textContent = order.client_name;
-    clone.querySelector(
-      ".card-detail.delivery-date"
-    ).textContent = `Delivery · ${formatDate(order.delivery_date)}`;
+    const deliveryLine = clone.querySelector(".card-detail.delivery-date");
+    const deliveryParts = [
+      formatDate(order.delivery_date),
+      formatDeliveryTimeSlot(order.delivery_time_slot),
+    ].filter(Boolean);
+    deliveryLine.textContent = `Delivery · ${
+      deliveryParts.length ? deliveryParts.join(" · ") : "—"
+    }`;
     clone.querySelectorAll(".card-detail")[1].textContent = order.order_details || "";
     clone.querySelectorAll(".card-detail")[2].textContent = order.delivery_address || "";
 
@@ -201,7 +253,9 @@ function renderCalendar() {
     const item = document.createElement("li");
     const time = document.createElement("time");
     time.dateTime = order.delivery_date;
-    time.textContent = formatLongDate(order.delivery_date);
+    const longDate = formatLongDate(order.delivery_date);
+    const timeSlotLabel = formatDeliveryTimeSlot(order.delivery_time_slot);
+    time.textContent = [longDate, timeSlotLabel].filter(Boolean).join(" · ");
 
     const details = document.createElement("p");
     details.className = "card-detail";
@@ -220,6 +274,15 @@ function renderCalendar() {
 
 function resetForm() {
   orderForm.reset();
+  if (bouquetTypeSelect && bouquetTypeSelect.options.length) {
+    bouquetTypeSelect.value = bouquetTypeSelect.options[0].value;
+  }
+  if (deliveryTimeSelect && deliveryTimeSelect.options.length) {
+    deliveryTimeSelect.value = deliveryTimeSelect.options[0].value;
+  }
+  if (priceHkdInput) {
+    priceHkdInput.value = "";
+  }
   editingOrderId = null;
   deleteOrderButton.hidden = true;
   orderFormTitle.textContent = "New order";
@@ -236,6 +299,30 @@ function openOrderDialog(order = null) {
     orderForm.deliveryDate.value = order.delivery_date
       ? order.delivery_date.slice(0, 10)
       : "";
+    if (orderForm.bouquetType) {
+      ensureBouquetOption(order.bouquet_type);
+      const defaultBouquet =
+        bouquetTypeSelect && bouquetTypeSelect.options.length
+          ? bouquetTypeSelect.options[0].value
+          : "";
+      orderForm.bouquetType.value =
+        order.bouquet_type || defaultBouquet;
+    }
+    if (orderForm.priceHkd) {
+      orderForm.priceHkd.value = order.price_hkd || "";
+    }
+    if (orderForm.deliveryTimeSlot) {
+      ensureDeliveryTimeOption(
+        order.delivery_time_slot,
+        formatDeliveryTimeSlot(order.delivery_time_slot)
+      );
+      const defaultSlot =
+        deliveryTimeSelect && deliveryTimeSelect.options.length
+          ? deliveryTimeSelect.options[0].value
+          : "";
+      orderForm.deliveryTimeSlot.value =
+        order.delivery_time_slot || defaultSlot;
+    }
     orderForm.orderDetails.value = order.order_details || "";
     orderForm.deliveryAddress.value = order.delivery_address || "";
     orderForm.orderStatus.value = order.status || "pending";
@@ -246,12 +333,22 @@ function openOrderDialog(order = null) {
     resetForm();
   }
 
-  orderDialog.showModal();
-  document.body.classList.add("dialog-open");
+  if (orderDialog) {
+    orderDialog.hidden = false;
+    document.body.classList.add("dialog-open");
+    if (modalContent) {
+      modalContent.scrollTop = 0;
+    }
+    if (orderForm.clientName) {
+      orderForm.clientName.focus();
+    }
+  }
 }
 
 function closeOrderDialog() {
-  orderDialog.close();
+  if (orderDialog) {
+    orderDialog.hidden = true;
+  }
   document.body.classList.remove("dialog-open");
   resetForm();
 }
@@ -271,7 +368,7 @@ async function fetchOrders() {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      `id, client_name, client_phone, client_email, delivery_date, order_details, delivery_address, status, internal_notes, created_at`
+      `id, client_name, client_phone, client_email, delivery_date, bouquet_type, price_hkd, delivery_time_slot, order_details, delivery_address, status, internal_notes, created_at`
     )
     .order("delivery_date", { ascending: true, nullsFirst: false });
 
@@ -281,7 +378,7 @@ async function fetchOrders() {
     return;
   }
 
-  orders = data ?? [];
+  orders = data || [];
   renderOrders();
   renderClients();
   renderCalendar();
@@ -294,11 +391,18 @@ async function saveOrder(event) {
     return;
   }
 
+  const priceValue = orderForm.priceHkd ? orderForm.priceHkd.value.trim() : "";
+
   const payload = {
     client_name: orderForm.clientName.value.trim(),
     client_phone: orderForm.clientPhone.value.trim(),
     client_email: orderForm.clientEmail.value.trim() || null,
     delivery_date: orderForm.deliveryDate.value || null,
+    bouquet_type: orderForm.bouquetType ? orderForm.bouquetType.value : null,
+    price_hkd: priceValue ? priceValue : null,
+    delivery_time_slot: orderForm.deliveryTimeSlot
+      ? orderForm.deliveryTimeSlot.value
+      : null,
     order_details: orderForm.orderDetails.value.trim(),
     delivery_address: orderForm.deliveryAddress.value.trim(),
     status: orderForm.orderStatus.value,
@@ -359,9 +463,13 @@ function initTabs() {
 function initDialog() {
   addOrderButton.addEventListener("click", () => openOrderDialog());
   closeDialogButton.addEventListener("click", closeOrderDialog);
-  orderDialog.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    closeOrderDialog();
+  if (modalOverlay) {
+    modalOverlay.addEventListener("click", closeOrderDialog);
+  }
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && orderDialog && !orderDialog.hidden) {
+      closeOrderDialog();
+    }
   });
   deleteOrderButton.addEventListener("click", deleteOrder);
   orderForm.addEventListener("submit", saveOrder);

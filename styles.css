@@ -367,16 +367,35 @@ form footer .ghost-button:focus-visible {
   overflow: hidden;
 }
 
-#orderDialog {
-  border: none;
-  border-radius: var(--radius);
-  padding: 1.5rem;
-  width: min(560px, 92vw);
-  box-shadow: var(--shadow);
+.modal[hidden] {
+  display: none;
 }
 
-#orderDialog::backdrop {
+.modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 30;
+  padding: 1.5rem;
+}
+
+.modal-overlay {
+  position: absolute;
+  inset: 0;
   background: rgba(47, 44, 40, 0.35);
+}
+
+.modal-content {
+  position: relative;
+  background: var(--surface);
+  border-radius: var(--radius);
+  width: min(560px, 92vw);
+  max-height: min(90vh, 720px);
+  overflow-y: auto;
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+  z-index: 1;
 }
 
 .form-grid {
