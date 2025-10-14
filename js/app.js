@@ -1,46 +1,48 @@
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import {
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
   ENABLE_AUTH,
   ALLOWED_EMAIL_DOMAINS,
-} from "./config.js";
+} from './config.js';
 
-const PLACEHOLDER_URL = "https://your-project.supabase.co";
-const PLACEHOLDER_KEY = "public-anon-key";
+const PLACEHOLDER_URL = 'https://your-project.supabase.co';
+const PLACEHOLDER_KEY = 'public-anon-key';
 
 const DELIVERY_TIME_SLOTS = [
-  { value: "10am-12pm", label: "10am – 12pm" },
-  { value: "1pm-3pm", label: "1pm – 3pm" },
-  { value: "self-pickup", label: "Self pickup" },
+  { value: '10am-12pm', label: '10am – 12pm' },
+  { value: '1pm-3pm', label: '1pm – 3pm' },
+  { value: 'self-pickup', label: 'Self pickup' },
 ];
 
-const addOrderButton = document.getElementById("addOrderButton");
-const ordersList = document.getElementById("ordersList");
-const clientsList = document.getElementById("clientsList");
-const calendarList = document.getElementById("calendarList");
-const orderDialog = document.getElementById("orderDialog");
-const orderForm = document.getElementById("orderForm");
-const orderFormTitle = document.getElementById("orderFormTitle");
+const addOrderButton = document.getElementById('addOrderButton');
+const ordersList = document.getElementById('ordersList');
+const clientsList = document.getElementById('clientsList');
+const calendarList = document.getElementById('calendarList');
+const orderDialog = document.getElementById('orderDialog');
+const orderForm = document.getElementById('orderForm');
+const orderFormTitle = document.getElementById('orderFormTitle');
 const modalOverlay = orderDialog
-  ? orderDialog.querySelector("[data-close-dialog]")
+  ? orderDialog.querySelector('[data-close-dialog]')
   : null;
 const modalContent = orderDialog
-  ? orderDialog.querySelector(".modal-content")
+  ? orderDialog.querySelector('.modal-content')
   : null;
-const bouquetTypeSelect = document.getElementById("bouquetType");
-const priceHkdInput = document.getElementById("priceHkd");
-const deliveryTimeSelect = document.getElementById("deliveryTimeSlot");
-const deleteOrderButton = document.getElementById("deleteOrder");
-const closeDialogButton = document.getElementById("closeDialog");
-const statusFilter = document.getElementById("statusFilter");
-const toast = document.querySelector(".toast");
-const signOutButton = document.getElementById("signOut");
-const clientLinkButton = document.getElementById("clientLinkButton");
+const bouquetTypeSelect = document.getElementById('bouquetType');
+const priceHkdInput = document.getElementById('priceHkd');
+const deliveryTimeSelect = document.getElementById('deliveryTimeSlot');
+const deleteOrderButton = document.getElementById('deleteOrder');
+const closeDialogButton = document.getElementById('closeDialog');
+const statusFilter = document.getElementById('statusFilter');
+const toast = document.querySelector('.toast');
+const signOutButton = document.getElementById('signOut');
+const clientLinkButton = document.getElementById('clientLinkButton');
 
-const tabButtons = [...document.querySelectorAll(".tab-button")];
-const tabPanels = [...document.querySelectorAll(".tab-panel")];
-const emptyStates = [...document.querySelectorAll(".empty-state")];
+const tabButtons = [...document.querySelectorAll('.tab-button')];
+const tabPanels = [...document.querySelectorAll('.tab-panel')];
+const emptyStates = [...document.querySelectorAll('.empty-state')];
+
+// Simple passcode lock removed in favor of Supabase Email OTP
 
 const isConfigured =
   SUPABASE_URL &&
@@ -49,7 +51,13 @@ const isConfigured =
   SUPABASE_ANON_KEY !== PLACEHOLDER_KEY;
 
 const supabase = isConfigured
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
   : null;
 
 let orders = [];
@@ -68,39 +76,39 @@ function showToast(message, duration = 2400) {
 function setEmptyState(panelId, isVisible) {
   const state = emptyStates.find((el) => el.dataset.for === panelId);
   if (state) {
-    state.classList.toggle("visible", isVisible);
+    state.classList.toggle('visible', isVisible);
   }
 }
 
 function switchTab(targetId) {
   tabButtons.forEach((button) => {
     const isActive = button.dataset.target === targetId;
-    button.classList.toggle("active", isActive);
+    button.classList.toggle('active', isActive);
   });
 
   tabPanels.forEach((panel) => {
-    panel.classList.toggle("active", panel.id === targetId);
+    panel.classList.toggle('active', panel.id === targetId);
   });
 }
 
 function formatDate(isoDate) {
-  if (!isoDate) return "";
+  if (!isoDate) return '';
   const date = new Date(isoDate);
   return date.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
   });
 }
 
 function formatLongDate(isoDate) {
-  if (!isoDate) return "";
+  if (!isoDate) return '';
   const date = new Date(isoDate);
   return date.toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
   });
 }
 
@@ -110,7 +118,7 @@ function ensureBouquetOption(value) {
     (option) => option.value === value
   );
   if (!exists) {
-    const option = document.createElement("option");
+    const option = document.createElement('option');
     option.value = value;
     option.textContent = value;
     bouquetTypeSelect.appendChild(option);
@@ -123,7 +131,7 @@ function ensureDeliveryTimeOption(value, label = value) {
     (option) => option.value === value
   );
   if (!exists) {
-    const option = document.createElement("option");
+    const option = document.createElement('option');
     option.value = value;
     option.textContent = label;
     deliveryTimeSelect.appendChild(option);
@@ -131,7 +139,7 @@ function ensureDeliveryTimeOption(value, label = value) {
 }
 
 function formatDeliveryTimeSlot(slotValue) {
-  if (!slotValue) return "";
+  if (!slotValue) return '';
   const match = DELIVERY_TIME_SLOTS.find((slot) => slot.value === slotValue);
   return match ? slot.label : slotValue;
 }
@@ -147,38 +155,41 @@ function renderOrders() {
   const filter = statusFilter.value;
 
   const filteredOrders = orders.filter((order) => {
-    if (filter === "all") return true;
+    if (filter === 'all') return true;
     return order.status === filter;
   });
 
   if (filteredOrders.length === 0) {
-    setEmptyState("orders", true);
+    setEmptyState('orders', true);
     return;
   }
-  setEmptyState("orders", false);
+  setEmptyState('orders', false);
 
-  const template = document.getElementById("orderCardTemplate");
+  const template = document.getElementById('orderCardTemplate');
 
   filteredOrders.forEach((order) => {
     const clone = template.content.firstElementChild.cloneNode(true);
-    clone.querySelector(".card-title").textContent = order.client_name;
-    const deliveryLine = clone.querySelector(".card-detail.delivery-date");
+    clone.querySelector('.card-title').textContent = order.client_name;
+    const deliveryLine = clone.querySelector('.card-detail.delivery-date');
     const deliveryParts = [
       formatDate(order.delivery_date),
       formatDeliveryTimeSlot(order.delivery_time_slot),
     ].filter(Boolean);
     deliveryLine.textContent = `Delivery · ${
-      deliveryParts.length ? deliveryParts.join(" · ") : "—"
+      deliveryParts.length ? deliveryParts.join(' · ') : '—'
     }`;
-    clone.querySelectorAll(".card-detail")[1].textContent = order.order_details || "";
-    clone.querySelectorAll(".card-detail")[2].textContent = order.delivery_address || "";
+    clone.querySelectorAll('.card-detail')[1].textContent =
+      order.card_message || '';
+    clone.querySelectorAll('.card-detail')[2].textContent =
+      order.delivery_address || '';
 
-    const pill = clone.querySelector(".status-pill");
+    const pill = clone.querySelector('.status-pill');
     pill.dataset.status = order.status;
-    pill.textContent = order.status === "fulfilled" ? "Fulfilled" : "Unfulfilled";
+    pill.textContent =
+      order.status === 'fulfilled' ? 'Fulfilled' : 'Unfulfilled';
 
-    const openButton = clone.querySelector("button");
-    openButton.addEventListener("click", () => openOrderDialog(order));
+    const openButton = clone.querySelector('button');
+    openButton.addEventListener('click', () => openOrderDialog(order));
 
     ordersList.appendChild(clone);
   });
@@ -190,12 +201,22 @@ function renderClients() {
 
   orders.forEach((order) => {
     const key = order.client_email || order.client_phone || order.client_name;
+    const codeFromOrder =
+      order.clients && order.clients.client_code
+        ? order.clients.client_code
+        : null;
     const existing = clientMap.get(key) || {
       client_name: order.client_name,
       client_email: order.client_email,
       client_phone: order.client_phone,
+      client_code: codeFromOrder,
       orders: [],
     };
+
+    // Preserve a non-empty client_code if we encounter it later
+    if (!existing.client_code && codeFromOrder) {
+      existing.client_code = codeFromOrder;
+    }
 
     existing.orders.push(order);
     clientMap.set(key, existing);
@@ -206,26 +227,29 @@ function renderClients() {
   );
 
   if (clients.length === 0) {
-    setEmptyState("clients", true);
+    setEmptyState('clients', true);
     return;
   }
-  setEmptyState("clients", false);
+  setEmptyState('clients', false);
 
-  const template = document.getElementById("clientCardTemplate");
+  const template = document.getElementById('clientCardTemplate');
 
   clients.forEach((client) => {
     const clone = template.content.firstElementChild.cloneNode(true);
-    clone.querySelector(".card-title").textContent = client.client_name;
-    const details = clone.querySelectorAll(".card-detail");
-    details[0].textContent = client.client_phone || "";
-    details[1].textContent = client.client_email || "";
-    clone.querySelector(
-      ".order-count"
-    ).textContent = `${client.orders.length} order${client.orders.length === 1 ? "" : "s"}`;
+    const title = client.client_code
+      ? `${client.client_code} · ${client.client_name}`
+      : client.client_name;
+    clone.querySelector('.card-title').textContent = title;
+    const details = clone.querySelectorAll('.card-detail');
+    details[0].textContent = client.client_phone || '';
+    details[1].textContent = client.client_email || '';
+    clone.querySelector('.order-count').textContent = `${
+      client.orders.length
+    } order${client.orders.length === 1 ? '' : 's'}`;
 
-    clone.addEventListener("click", () => {
-      const latestOrder = [...client.orders].sort((a, b) =>
-        new Date(b.created_at) - new Date(a.created_at)
+    clone.addEventListener('click', () => {
+      const latestOrder = [...client.orders].sort(
+        (a, b) => new Date(b.created_at) - new Date(a.created_at)
       )[0];
       if (latestOrder) {
         openOrderDialog(latestOrder);
@@ -244,26 +268,26 @@ function renderCalendar() {
     .sort((a, b) => new Date(a.delivery_date) - new Date(b.delivery_date));
 
   if (datedOrders.length === 0) {
-    setEmptyState("calendar", true);
+    setEmptyState('calendar', true);
     return;
   }
-  setEmptyState("calendar", false);
+  setEmptyState('calendar', false);
 
   datedOrders.forEach((order) => {
-    const item = document.createElement("li");
-    const time = document.createElement("time");
+    const item = document.createElement('li');
+    const time = document.createElement('time');
     time.dateTime = order.delivery_date;
     const longDate = formatLongDate(order.delivery_date);
     const timeSlotLabel = formatDeliveryTimeSlot(order.delivery_time_slot);
-    time.textContent = [longDate, timeSlotLabel].filter(Boolean).join(" · ");
+    time.textContent = [longDate, timeSlotLabel].filter(Boolean).join(' · ');
 
-    const details = document.createElement("p");
-    details.className = "card-detail";
-    details.textContent = `${order.client_name} · ${order.order_details || ""}`;
+    const details = document.createElement('p');
+    details.className = 'card-detail';
+    details.textContent = `${order.client_name} · ${order.card_message || ''}`;
 
-    const address = document.createElement("p");
-    address.className = "card-detail";
-    address.textContent = order.delivery_address || "";
+    const address = document.createElement('p');
+    address.className = 'card-detail';
+    address.textContent = order.delivery_address || '';
 
     item.appendChild(time);
     item.appendChild(details);
@@ -281,35 +305,34 @@ function resetForm() {
     deliveryTimeSelect.value = deliveryTimeSelect.options[0].value;
   }
   if (priceHkdInput) {
-    priceHkdInput.value = "";
+    priceHkdInput.value = '';
   }
   editingOrderId = null;
   deleteOrderButton.hidden = true;
-  orderFormTitle.textContent = "New order";
-  orderForm.dataset.mode = "create";
+  orderFormTitle.textContent = 'New order';
+  orderForm.dataset.mode = 'create';
 }
 
 function openOrderDialog(order = null) {
   if (order) {
     editingOrderId = order.id;
-    orderFormTitle.textContent = "Update order";
-    orderForm.clientName.value = order.client_name || "";
-    orderForm.clientPhone.value = order.client_phone || "";
-    orderForm.clientEmail.value = order.client_email || "";
+    orderFormTitle.textContent = 'Update order';
+    orderForm.clientName.value = order.client_name || '';
+    orderForm.clientPhone.value = order.client_phone || '';
+    orderForm.clientEmail.value = order.client_email || '';
     orderForm.deliveryDate.value = order.delivery_date
       ? order.delivery_date.slice(0, 10)
-      : "";
+      : '';
     if (orderForm.bouquetType) {
       ensureBouquetOption(order.bouquet_type);
       const defaultBouquet =
         bouquetTypeSelect && bouquetTypeSelect.options.length
           ? bouquetTypeSelect.options[0].value
-          : "";
-      orderForm.bouquetType.value =
-        order.bouquet_type || defaultBouquet;
+          : '';
+      orderForm.bouquetType.value = order.bouquet_type || defaultBouquet;
     }
     if (orderForm.priceHkd) {
-      orderForm.priceHkd.value = order.price_hkd || "";
+      orderForm.priceHkd.value = order.price_hkd || '';
     }
     if (orderForm.deliveryTimeSlot) {
       ensureDeliveryTimeOption(
@@ -319,23 +342,23 @@ function openOrderDialog(order = null) {
       const defaultSlot =
         deliveryTimeSelect && deliveryTimeSelect.options.length
           ? deliveryTimeSelect.options[0].value
-          : "";
+          : '';
       orderForm.deliveryTimeSlot.value =
         order.delivery_time_slot || defaultSlot;
     }
-    orderForm.orderDetails.value = order.order_details || "";
-    orderForm.deliveryAddress.value = order.delivery_address || "";
-    orderForm.orderStatus.value = order.status || "pending";
-    orderForm.notes.value = order.internal_notes || "";
+    orderForm.cardMessage.value = order.card_message || '';
+    orderForm.deliveryAddress.value = order.delivery_address || '';
+    orderForm.orderStatus.value = order.status || 'pending';
+    orderForm.notes.value = order.internal_notes || '';
     deleteOrderButton.hidden = false;
-    orderForm.dataset.mode = "update";
+    orderForm.dataset.mode = 'update';
   } else {
     resetForm();
   }
 
   if (orderDialog) {
     orderDialog.hidden = false;
-    document.body.classList.add("dialog-open");
+    document.body.classList.add('dialog-open');
     if (modalContent) {
       modalContent.scrollTop = 0;
     }
@@ -349,28 +372,28 @@ function closeOrderDialog() {
   if (orderDialog) {
     orderDialog.hidden = true;
   }
-  document.body.classList.remove("dialog-open");
+  document.body.classList.remove('dialog-open');
   resetForm();
 }
 
 async function fetchOrders() {
   if (!supabase) {
     console.warn(
-      "Supabase is not configured. Update js/config.js with your project keys."
+      'Supabase is not configured. Update js/config.js with your project keys.'
     );
-    showToast("Add your Supabase keys to start saving orders.", 4000);
-    setEmptyState("orders", true);
-    setEmptyState("clients", true);
-    setEmptyState("calendar", true);
+    showToast('Add your Supabase keys to start saving orders.', 4000);
+    setEmptyState('orders', true);
+    setEmptyState('clients', true);
+    setEmptyState('calendar', true);
     return;
   }
 
   const { data, error } = await supabase
-    .from("orders")
+    .from('orders')
     .select(
-      `id, client_name, client_phone, client_email, delivery_date, bouquet_type, price_hkd, delivery_time_slot, order_details, delivery_address, status, internal_notes, created_at`
+      `id, client_id, client_name, client_phone, client_email, delivery_date, bouquet_type, price_hkd, delivery_time_slot, card_message, delivery_address, status, internal_notes, created_at, clients ( client_code )`
     )
-    .order("delivery_date", { ascending: true, nullsFirst: false });
+    .order('delivery_date', { ascending: true, nullsFirst: false });
 
   if (error) {
     console.error(error);
@@ -387,11 +410,11 @@ async function fetchOrders() {
 async function saveOrder(event) {
   event.preventDefault();
   if (!supabase) {
-    showToast("Configure Supabase to enable saving.");
+    showToast('Configure Supabase to enable saving.');
     return;
   }
 
-  const priceValue = orderForm.priceHkd ? orderForm.priceHkd.value.trim() : "";
+  const priceValue = orderForm.priceHkd ? orderForm.priceHkd.value.trim() : '';
 
   const payload = {
     client_name: orderForm.clientName.value.trim(),
@@ -403,7 +426,7 @@ async function saveOrder(event) {
     delivery_time_slot: orderForm.deliveryTimeSlot
       ? orderForm.deliveryTimeSlot.value
       : null,
-    order_details: orderForm.orderDetails.value.trim(),
+    card_message: orderForm.cardMessage.value.trim(),
     delivery_address: orderForm.deliveryAddress.value.trim(),
     status: orderForm.orderStatus.value,
     internal_notes: orderForm.notes.value.trim() || null,
@@ -412,23 +435,26 @@ async function saveOrder(event) {
   let response;
 
   if (editingOrderId) {
-    response = await supabase.from("orders").update(payload).eq("id", editingOrderId);
+    response = await supabase
+      .from('orders')
+      .update(payload)
+      .eq('id', editingOrderId);
   } else {
     response = await supabase
-      .from("orders")
-      .insert({ ...payload, submission_source: "manual" });
+      .from('orders')
+      .insert({ ...payload, submission_source: 'manual' });
   }
 
   const { error } = response;
 
   if (error) {
     console.error(error);
-    showToast("Could not save order. Please try again.");
+    showToast('Could not save order. Please try again.');
     return;
   }
 
   closeOrderDialog();
-  showToast(editingOrderId ? "Order updated" : "Order added");
+  showToast(editingOrderId ? 'Order updated' : 'Order added');
   await fetchOrders();
 }
 
@@ -438,59 +464,62 @@ async function deleteOrder() {
     return;
   }
 
-  const confirmation = confirm("Delete this order? This cannot be undone.");
+  const confirmation = confirm('Delete this order? This cannot be undone.');
   if (!confirmation) return;
 
-  const { error } = await supabase.from("orders").delete().eq("id", editingOrderId);
+  const { error } = await supabase
+    .from('orders')
+    .delete()
+    .eq('id', editingOrderId);
 
   if (error) {
     console.error(error);
-    showToast("Could not delete order.");
+    showToast('Could not delete order.');
     return;
   }
 
   closeOrderDialog();
-  showToast("Order deleted");
+  showToast('Order deleted');
   await fetchOrders();
 }
 
 function initTabs() {
   tabButtons.forEach((button) => {
-    button.addEventListener("click", () => switchTab(button.dataset.target));
+    button.addEventListener('click', () => switchTab(button.dataset.target));
   });
 }
 
 function initDialog() {
-  addOrderButton.addEventListener("click", () => openOrderDialog());
-  closeDialogButton.addEventListener("click", closeOrderDialog);
+  addOrderButton.addEventListener('click', () => openOrderDialog());
+  closeDialogButton.addEventListener('click', closeOrderDialog);
   if (modalOverlay) {
-    modalOverlay.addEventListener("click", closeOrderDialog);
+    modalOverlay.addEventListener('click', closeOrderDialog);
   }
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && orderDialog && !orderDialog.hidden) {
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && orderDialog && !orderDialog.hidden) {
       closeOrderDialog();
     }
   });
-  deleteOrderButton.addEventListener("click", deleteOrder);
-  orderForm.addEventListener("submit", saveOrder);
+  deleteOrderButton.addEventListener('click', deleteOrder);
+  orderForm.addEventListener('submit', saveOrder);
 }
 
 function initStatusFilter() {
-  statusFilter.addEventListener("change", renderOrders);
+  statusFilter.addEventListener('change', renderOrders);
 }
 
 function initClientLinkCopy() {
   if (!clientLinkButton || !navigator.clipboard) return;
 
-  clientLinkButton.addEventListener("click", async (event) => {
+  clientLinkButton.addEventListener('click', async (event) => {
     event.preventDefault();
-    const link = new URL("order.html", window.location.href).toString();
+    const link = new URL('order.html', window.location.href).toString();
     try {
       await navigator.clipboard.writeText(link);
-      showToast("Client link copied to clipboard");
+      showToast('Client link copied to clipboard');
     } catch (error) {
       console.warn(error);
-      window.open("order.html", "_blank");
+      window.open('order.html', '_blank');
     }
   });
 }
@@ -504,23 +533,25 @@ async function initAuth() {
     return;
   }
 
-  const authContainer = document.createElement("section");
-  authContainer.className = "auth-overlay";
+  const authContainer = document.createElement('section');
+  authContainer.className = 'auth-overlay';
   authContainer.innerHTML = `
     <div class="auth-card">
       <h2>Sign in</h2>
-      <p>Use your business email to access the dashboard.</p>
+      <p>Use your business email and password to access the dashboard.</p>
       <form id="authForm">
         <label for="authEmail">Email address</label>
         <input id="authEmail" type="email" required placeholder="you@kewgardenflowers.com" />
-        <button type="submit" class="primary-button">Send magic link</button>
+        <label for="authPassword">Password</label>
+        <input id="authPassword" type="password" required placeholder="Password" minlength="6" />
+        <button type="submit" class="primary-button">Sign in</button>
       </form>
-      <p class="auth-note">Check your inbox for a login link.</p>
+      <p class="auth-note">Use the password you set in Supabase Auth.</p>
     </div>`;
 
   document.body.appendChild(authContainer);
 
-  const authForm = authContainer.querySelector("#authForm");
+  const authForm = authContainer.querySelector('#authForm');
 
   async function handleSession(session) {
     authSession = session;
@@ -542,33 +573,40 @@ async function initAuth() {
     handleSession(session);
   });
 
-  authForm.addEventListener("submit", async (event) => {
+  authForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const email = authForm.authEmail.value.trim();
+    const password = authForm.authPassword.value;
 
-    const domain = email.split("@").pop();
-    if (ALLOWED_EMAIL_DOMAINS.length && !ALLOWED_EMAIL_DOMAINS.includes(domain)) {
-      showToast("Email not allowed. Use your business email.");
+    const domain = email.split('@').pop();
+    if (
+      ALLOWED_EMAIL_DOMAINS.length &&
+      !ALLOWED_EMAIL_DOMAINS.includes(domain)
+    ) {
+      showToast('Email not allowed. Use your business email.');
       return;
     }
 
-    const { error } = await supabase.auth.signInWithOtp({ email });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     if (error) {
       console.error(error);
-      showToast("Could not send link. Try again.");
+      showToast('Could not send link. Try again.');
       return;
     }
 
-    showToast("Magic link sent!", 3200);
+    showToast('Magic link sent!', 3200);
   });
 
-  signOutButton.addEventListener("click", async () => {
+  signOutButton.addEventListener('click', async () => {
     await supabase.auth.signOut();
   });
 }
 
 function injectAuthStyles() {
-  const style = document.createElement("style");
+  const style = document.createElement('style');
   style.textContent = `
     .auth-overlay {
       position: fixed;
@@ -594,11 +632,21 @@ function injectAuthStyles() {
       margin: 0;
       font-family: "Playfair Display", serif;
     }
+    .auth-card form {
+      display: grid;
+      gap: 0.6rem;
+      text-align: left;
+    }
+    .auth-card label {
+      display: block;
+      font-weight: 500;
+    }
     .auth-card input {
       padding: 0.6rem 0.75rem;
       border-radius: 12px;
       border: 1px solid rgba(47, 44, 40, 0.12);
       font: inherit;
+      width: 100%;
     }
     .auth-note {
       margin: 0;
@@ -626,8 +674,8 @@ function init() {
   }
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
 } else {
   init();
 }
