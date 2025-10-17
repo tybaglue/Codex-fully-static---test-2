@@ -80,6 +80,25 @@
       <section id="calendar" class="tab-panel" aria-labelledby="Calendar">
         <div class="panel-header">
           <h2>Delivery schedule</h2>
+          <div
+            class="filter"
+            style="display: flex; gap: 0.75rem; align-items: center"
+          >
+            <label class="filter">
+              <span>View</span>
+              <select id="calendarView">
+                <option value="agenda">Agenda</option>
+                <option value="month">Month</option>
+              </select>
+            </label>
+            <label
+              class="filter"
+              style="display: inline-flex; gap: 0.5rem; align-items: center"
+            >
+              <input id="hideFulfilled" type="checkbox" />
+              <span>Hide fulfilled</span>
+            </label>
+          </div>
         </div>
         <ol id="calendarList" class="calendar-list"></ol>
         <p class="empty-state" data-for="calendar">
@@ -158,14 +177,15 @@
               <select id="deliveryTimeSlot" name="deliveryTimeSlot" required>
                 <option value="10am-12pm">10am – 12pm</option>
                 <option value="1pm-3pm">1pm – 3pm</option>
+                <option value="3pm-5pm">3pm – 5pm</option>
                 <option value="self-pickup">Self pickup</option>
               </select>
             </div>
             <div class="input-group span-2">
-              <label for="orderDetails">Message to recipient</label>
+              <label for="cardMessage">Message on card</label>
               <textarea
-                id="orderDetails"
-                name="orderDetails"
+                id="cardMessage"
+                name="cardMessage"
                 rows="3"
                 required
               ></textarea>
@@ -208,7 +228,7 @@
       <article class="card" role="listitem">
         <header>
           <h3 class="card-title"></h3>
-          <span class="status-pill"></span>
+          <span class="status-pill" title="Tap to toggle status"></span>
         </header>
         <p class="card-detail delivery-date"></p>
         <p class="card-detail"></p>
