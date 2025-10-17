@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Client · Kew Garden Flowers</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Work+Sans:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark">K</span>
+        <div>
+          <p class="brand-name">Kew Garden Flowers</p>
+          <p class="brand-tagline">Client</p>
+        </div>
+      </div>
+      <a href="index.html" class="ghost-button">Back</a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <h1 id="clientTitle">Client</h1>
+        <p>
+          View and update client information. Orders for this client are listed
+          below.
+        </p>
+      </section>
+
+      <section class="tab-panel active" aria-labelledby="Client">
+        <div class="panel-header">
+          <h2>Client details</h2>
+        </div>
+        <form id="clientForm" class="form-grid">
+          <div class="input-group">
+            <label for="clientName">Name</label>
+            <input id="clientName" type="text" />
+          </div>
+          <div class="input-group">
+            <label for="clientPhone">Phone</label>
+            <input id="clientPhone" type="tel" />
+          </div>
+          <div class="input-group">
+            <label for="clientEmail">Email</label>
+            <input id="clientEmail" type="email" />
+          </div>
+          <div class="input-group span-2">
+            <label>&nbsp;</label>
+            <div>
+              <button class="primary-button" type="submit">Save changes</button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <section class="tab-panel active" aria-labelledby="Orders">
+        <div class="panel-header">
+          <h2>Orders</h2>
+        </div>
+        <div id="ordersList" class="card-list" role="list"></div>
+        <p class="empty-state" data-for="client-orders">
+          No orders for this client yet.
+        </p>
+      </section>
+    </main>
+
+    <template id="orderCardTemplate">
+      <article class="card" role="listitem">
+        <header>
+          <h3 class="card-title"></h3>
+          <span class="status-pill"></span>
+        </header>
+        <p class="card-detail delivery-date"></p>
+        <p class="card-detail"></p>
+        <p class="card-detail"></p>
+      </article>
+    </template>
+
+    <div class="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="js/config.js"></script>
+    <script type="module" src="js/client.js"></script>
+  </body>
+</html>
+

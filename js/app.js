@@ -37,6 +37,8 @@ const statusFilter = document.getElementById('statusFilter');
 const toast = document.querySelector('.toast');
 const signOutButton = document.getElementById('signOut');
 const clientLinkButton = document.getElementById('clientLinkButton');
+const calendarViewSelect = document.getElementById('calendarView');
+const hideFulfilledCheckbox = document.getElementById('hideFulfilled');
 
 const tabButtons = [...document.querySelectorAll('.tab-button')];
 const tabPanels = [...document.querySelectorAll('.tab-panel')];
@@ -89,6 +91,15 @@ function switchTab(targetId) {
   tabPanels.forEach((panel) => {
     panel.classList.toggle('active', panel.id === targetId);
   });
+
+  // Ensure lists are rendered/refreshed when switching tabs
+  if (targetId === 'clients') {
+    renderClients();
+  } else if (targetId === 'orders') {
+    renderOrders();
+  } else if (targetId === 'calendar') {
+    renderCalendar();
+  }
 }
 
 function formatDate(isoDate) {
@@ -188,6 +199,41 @@ function renderOrders() {
     pill.textContent =
       order.status === 'fulfilled' ? 'Fulfilled' : 'Unfulfilled';
 
+    // Toggle status directly from the list
+    pill.style.cursor = 'pointer';
+    pill.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      if (!supabase) return;
+
+      const newStatus = order.status === 'fulfilled' ? 'pending' : 'fulfilled';
+
+      // Optimistic UI update
+      order.status = newStatus;
+      pill.dataset.status = newStatus;
+      pill.textContent =
+        newStatus === 'fulfilled' ? 'Fulfilled' : 'Unfulfilled';
+
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('id', order.id);
+
+      if (error) {
+        // Revert on error
+        order.status = newStatus === 'fulfilled' ? 'pending' : 'fulfilled';
+        pill.dataset.status = order.status;
+        pill.textContent =
+          order.status === 'fulfilled' ? 'Fulfilled' : 'Unfulfilled';
+        console.error(error);
+        showToast('Could not update status.');
+        return;
+      }
+
+      showToast(
+        newStatus === 'fulfilled' ? 'Marked fulfilled' : 'Marked unfulfilled'
+      );
+    });
+
     const openButton = clone.querySelector('button');
     openButton.addEventListener('click', () => openOrderDialog(order));
 
@@ -239,7 +285,8 @@ function renderClients() {
     const title = client.client_code
       ? `${client.client_code} · ${client.client_name}`
       : client.client_name;
-    clone.querySelector('.card-title').textContent = title;
+    const titleEl = clone.querySelector('.card-title');
+    titleEl.textContent = title;
     const details = clone.querySelectorAll('.card-detail');
     details[0].textContent = client.client_phone || '';
     details[1].textContent = client.client_email || '';
@@ -247,13 +294,20 @@ function renderClients() {
       client.orders.length
     } order${client.orders.length === 1 ? '' : 's'}`;
 
-    clone.addEventListener('click', () => {
+    // Navigate to client details page on title click
+    titleEl.style.cursor = 'pointer';
+    titleEl.addEventListener('click', (event) => {
+      event.stopPropagation();
       const latestOrder = [...client.orders].sort(
         (a, b) => new Date(b.created_at) - new Date(a.created_at)
       )[0];
-      if (latestOrder) {
-        openOrderDialog(latestOrder);
-      }
+      const clientId = latestOrder && latestOrder.client_id;
+      const key =
+        client.client_email || client.client_phone || client.client_name;
+      const url = new URL('client.html', window.location.href);
+      if (clientId) url.searchParams.set('client_id', clientId);
+      if (key) url.searchParams.set('key', key);
+      window.location.href = url.toString();
     });
 
     clientsList.appendChild(clone);
@@ -262,23 +316,41 @@ function renderClients() {
 
 function renderCalendar() {
   clearList(calendarList);
+  const hideFulfilled = !!(
+    hideFulfilledCheckbox && hideFulfilledCheckbox.checked
+  );
+  const view = calendarViewSelect ? calendarViewSelect.value : 'agenda';
 
-  const datedOrders = orders
-    .filter((order) => order.delivery_date)
-    .sort((a, b) => new Date(a.delivery_date) - new Date(b.delivery_date));
+  const baseOrders = orders.filter((order) => order.delivery_date);
+  const filtered = hideFulfilled
+    ? baseOrders.filter((o) => o.status !== 'fulfilled')
+    : baseOrders;
 
-  if (datedOrders.length === 0) {
+  if (view === 'month') {
+    renderMonthCalendar(filtered);
+  } else {
+    renderAgendaCalendar(filtered);
+  }
+}
+
+function renderAgendaCalendar(datedOrders) {
+  const sorted = [...datedOrders].sort(
+    (a, b) => new Date(a.delivery_date) - new Date(b.delivery_date)
+  );
+
+  if (sorted.length === 0) {
     setEmptyState('calendar', true);
     return;
   }
   setEmptyState('calendar', false);
 
-  datedOrders.forEach((order) => {
+  sorted.forEach((order) => {
     const item = document.createElement('li');
     const time = document.createElement('time');
     time.dateTime = order.delivery_date;
     const longDate = formatLongDate(order.delivery_date);
     const timeSlotLabel = formatDeliveryTimeSlot(order.delivery_time_slot);
+    const statusLabel = order.status === 'fulfilled' ? ' · Fulfilled' : '';
     time.textContent = [longDate, timeSlotLabel].filter(Boolean).join(' · ');
 
     const details = document.createElement('p');
@@ -289,10 +361,118 @@ function renderCalendar() {
     address.className = 'card-detail';
     address.textContent = order.delivery_address || '';
 
+    const status = document.createElement('span');
+    status.className = 'status-pill';
+    status.dataset.status = order.status;
+    status.textContent =
+      order.status === 'fulfilled' ? 'Fulfilled' : 'Unfulfilled';
+
     item.appendChild(time);
     item.appendChild(details);
     item.appendChild(address);
+    item.appendChild(status);
     calendarList.appendChild(item);
+  });
+}
+
+function startOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function endOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function getMonthGridDays(refDate) {
+  const start = startOfMonth(refDate);
+  const end = endOfMonth(refDate);
+  const days = [];
+  const firstDay = new Date(start);
+  firstDay.setDate(firstDay.getDate() - ((firstDay.getDay() + 6) % 7)); // Monday-start
+  const lastDay = new Date(end);
+  lastDay.setDate(lastDay.getDate() + (7 - ((lastDay.getDay() + 6) % 7) - 1));
+  for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
+    days.push(new Date(d));
+  }
+  return days;
+}
+
+function renderMonthCalendar(datedOrders) {
+  const now = new Date();
+  const days = getMonthGridDays(now);
+
+  // Group orders by date (YYYY-MM-DD)
+  const byDate = new Map();
+  datedOrders.forEach((o) => {
+    const key = (o.delivery_date || '').slice(0, 10);
+    if (!key) return;
+    if (!byDate.has(key)) byDate.set(key, []);
+    byDate.get(key).push(o);
+  });
+
+  if (days.length === 0) {
+    setEmptyState('calendar', true);
+    return;
+  }
+  setEmptyState('calendar', false);
+
+  // Render as a simple 7-column grid using <li> rows
+  const weekHeader = document.createElement('li');
+  weekHeader.style.display = 'grid';
+  weekHeader.style.gridTemplateColumns = 'repeat(7, 1fr)';
+  weekHeader.style.gap = '0.5rem';
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  weekdays.forEach((wd) => {
+    const div = document.createElement('div');
+    div.style.fontWeight = '600';
+    div.textContent = wd;
+    weekHeader.appendChild(div);
+  });
+  calendarList.appendChild(weekHeader);
+
+  const row = document.createElement('li');
+  row.style.display = 'grid';
+  row.style.gridTemplateColumns = 'repeat(7, 1fr)';
+  row.style.gap = '0.5rem';
+
+  days.forEach((day, idx) => {
+    const cell = document.createElement('div');
+    cell.style.background = 'var(--surface-muted, #f7f5f3)';
+    cell.style.borderRadius = '12px';
+    cell.style.padding = '0.5rem';
+    const dateLabel = document.createElement('div');
+    dateLabel.style.fontWeight = '600';
+    dateLabel.style.marginBottom = '0.25rem';
+    dateLabel.textContent = day.getDate().toString();
+    cell.appendChild(dateLabel);
+
+    const key = day.toISOString().slice(0, 10);
+    const dayOrders = byDate.get(key) || [];
+    dayOrders.slice(0, 3).forEach((o) => {
+      const badge = document.createElement('div');
+      badge.className = 'status-pill';
+      badge.dataset.status = o.status;
+      badge.textContent = o.client_name;
+      badge.style.display = 'inline-block';
+      badge.style.marginRight = '0.25rem';
+      badge.style.marginBottom = '0.25rem';
+      cell.appendChild(badge);
+    });
+    if (dayOrders.length > 3) {
+      const more = document.createElement('div');
+      more.textContent = `+${dayOrders.length - 3} more`;
+      more.style.fontSize = '0.85rem';
+      more.style.color = 'var(--text-muted)';
+      cell.appendChild(more);
+    }
+
+    row.appendChild(cell);
+
+    // append row every 7 cells
+    if ((idx + 1) % 7 === 0) {
+      calendarList.appendChild(row.cloneNode(true));
+      while (row.firstChild) row.removeChild(row.firstChild);
+    }
   });
 }
 
@@ -508,6 +688,15 @@ function initStatusFilter() {
   statusFilter.addEventListener('change', renderOrders);
 }
 
+function initCalendarControls() {
+  if (calendarViewSelect) {
+    calendarViewSelect.addEventListener('change', renderCalendar);
+  }
+  if (hideFulfilledCheckbox) {
+    hideFulfilledCheckbox.addEventListener('change', renderCalendar);
+  }
+}
+
 function initClientLinkCopy() {
   if (!clientLinkButton || !navigator.clipboard) return;
 
@@ -664,6 +853,7 @@ function init() {
   initTabs();
   initDialog();
   initStatusFilter();
+  initCalendarControls();
   initClientLinkCopy();
   injectAuthStyles();
 
