@@ -20,7 +20,8 @@
 
 body {
   margin: 0;
-  font-family: "Work Sans", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Work Sans', system-ui, -apple-system, BlinkMacSystemFont,
+    sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -99,7 +100,7 @@ main {
   height: 44px;
   border-radius: 12px;
   background: var(--surface-alt);
-  font-family: "Playfair Display", serif;
+  font-family: 'Playfair Display', serif;
   font-size: 1.5rem;
   color: var(--accent);
 }
@@ -119,7 +120,11 @@ main {
 }
 
 .hero {
-  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-alt) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--surface) 0%,
+    var(--surface-alt) 100%
+  );
   border-radius: var(--radius);
   padding: 1.5rem;
   box-shadow: var(--shadow);
@@ -129,7 +134,7 @@ main {
 
 .hero h1 {
   margin: 0;
-  font-family: "Playfair Display", serif;
+  font-family: 'Playfair Display', serif;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -186,12 +191,19 @@ main {
 
 .tab-nav {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   margin-top: 2rem;
   border-radius: 999px;
   background: var(--surface);
   padding: 0.3rem;
   box-shadow: var(--shadow);
+}
+
+@media (max-width: 600px) {
+  .tab-nav {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.3rem;
+  }
 }
 
 .tab-button {
@@ -289,7 +301,7 @@ main {
   color: var(--accent-dark);
 }
 
-.status-pill[data-status="fulfilled"] {
+.status-pill[data-status='fulfilled'] {
   background: rgba(129, 122, 116, 0.2);
   color: var(--brand);
 }
@@ -489,5 +501,265 @@ form footer .ghost-button:focus-visible {
   .order-page {
     padding: 1.5rem;
     box-shadow: none;
+  }
+}
+
+/* Invoice-specific styles */
+.invoice-amount {
+  font-weight: 600;
+  color: var(--accent-dark);
+  font-size: 1.05rem;
+}
+
+.status-pill[data-status='draft'] {
+  background: rgba(94, 86, 77, 0.15);
+  color: var(--text-muted);
+}
+
+.status-pill[data-status='sent'] {
+  background: rgba(224, 114, 76, 0.18);
+  color: var(--accent-dark);
+}
+
+.status-pill[data-status='paid'] {
+  background: rgba(76, 175, 80, 0.18);
+  color: #388e3c;
+}
+
+/* Order checkbox list in invoice form */
+.order-checkbox-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: background 150ms ease;
+}
+
+.order-checkbox-item:hover {
+  background: rgba(224, 114, 76, 0.08);
+}
+
+.order-checkbox-item input[type='checkbox'] {
+  margin-top: 0.25rem;
+  cursor: pointer;
+}
+
+.order-checkbox-item label {
+  cursor: pointer;
+  flex: 1;
+  font-size: 0.95rem;
+}
+
+.order-checkbox-item label span {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+/* Client sorting controls */
+.client-sort-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.client-stats {
+  display: flex;
+  gap: 1.5rem;
+  padding: 1rem;
+  background: var(--surface-alt);
+  border-radius: calc(var(--radius) - 4px);
+  margin-bottom: 1rem;
+}
+
+.client-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.client-stat-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.client-stat-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--accent-dark);
+}
+
+/* PWA install prompt */
+.pwa-install-prompt {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  padding: 1rem 1.5rem;
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(47, 44, 40, 0.2);
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  max-width: min(90vw, 400px);
+  z-index: 25;
+}
+
+.pwa-install-prompt.hidden {
+  display: none;
+}
+
+.pwa-install-prompt p {
+  margin: 0;
+  font-size: 0.95rem;
+  flex: 1;
+}
+
+.pwa-install-prompt button {
+  white-space: nowrap;
+}
+
+/* Client detail page styles */
+.client-summary-card {
+  margin-top: 1.5rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+.client-contact-chips {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.contact-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface-alt);
+  border-radius: calc(var(--radius) - 4px);
+  border: 1px solid var(--border);
+}
+
+.contact-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.contact-value {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.copy-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  font-size: 1rem;
+  opacity: 0.6;
+  transition: opacity 150ms ease;
+  line-height: 1;
+}
+
+.copy-button:hover {
+  opacity: 1;
+}
+
+.client-stats-inline {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.client-stats-inline .client-stat {
+  flex: 0 1 auto;
+}
+
+.client-orders-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.custom-date-range {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.75rem;
+  background: var(--surface-alt);
+  border-radius: calc(var(--radius) - 4px);
+  margin-top: 0.75rem;
+}
+
+.custom-date-range input[type='date'] {
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font: inherit;
+}
+
+.order-card footer {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.order-edit-button {
+  font-size: 0.9rem;
+  padding: 0.5rem 1rem;
+}
+
+@media (max-width: 600px) {
+  .client-contact-chips {
+    flex-direction: column;
+  }
+
+  .contact-chip {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .client-stats-inline {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .client-orders-controls {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .client-orders-controls .filter {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .custom-date-range {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .custom-date-range .filter {
+    width: 100%;
+    justify-content: space-between;
   }
 }

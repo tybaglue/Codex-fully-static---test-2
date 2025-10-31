@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Client · Kew Garden Flowers</title>
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#e0724c" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -21,7 +29,9 @@
           <p class="brand-tagline">Client</p>
         </div>
       </div>
-      <a href="index.html" class="ghost-button">Back</a>
+      <a href="index.html?tab=clients" class="ghost-button" id="backButton"
+        >Back</a
+      >
     </header>
 
     <main>
@@ -33,6 +43,52 @@
         </p>
       </section>
 
+      <!-- Client Summary Stats -->
+      <section
+        id="clientSummary"
+        class="client-summary-card"
+        style="display: none"
+      >
+        <div class="client-contact-chips">
+          <div class="contact-chip" id="phoneChip" style="display: none">
+            <span class="contact-label">Phone</span>
+            <span class="contact-value" id="phoneValue"></span>
+            <button
+              class="copy-button"
+              data-copy="phone"
+              aria-label="Copy phone"
+            >
+              📋
+            </button>
+          </div>
+          <div class="contact-chip" id="emailChip" style="display: none">
+            <span class="contact-label">Email</span>
+            <span class="contact-value" id="emailValue"></span>
+            <button
+              class="copy-button"
+              data-copy="email"
+              aria-label="Copy email"
+            >
+              📋
+            </button>
+          </div>
+        </div>
+        <div class="client-stats-inline">
+          <div class="client-stat">
+            <span class="client-stat-label">Total Orders</span>
+            <span class="client-stat-value" id="totalOrdersStat">0</span>
+          </div>
+          <div class="client-stat">
+            <span class="client-stat-label">Total Spent</span>
+            <span class="client-stat-value" id="totalSpentStat">HKD 0</span>
+          </div>
+          <div class="client-stat">
+            <span class="client-stat-label">Outstanding</span>
+            <span class="client-stat-value" id="outstandingStat">0</span>
+          </div>
+        </div>
+      </section>
+
       <section class="tab-panel active" aria-labelledby="Client">
         <div class="panel-header">
           <h2>Client details</h2>
@@ -40,11 +96,11 @@
         <form id="clientForm" class="form-grid">
           <div class="input-group">
             <label for="clientName">Name</label>
-            <input id="clientName" type="text" />
+            <input id="clientName" type="text" required />
           </div>
           <div class="input-group">
             <label for="clientPhone">Phone</label>
-            <input id="clientPhone" type="tel" />
+            <input id="clientPhone" type="tel" required />
           </div>
           <div class="input-group">
             <label for="clientEmail">Email</label>
@@ -62,6 +118,40 @@
       <section class="tab-panel active" aria-labelledby="Orders">
         <div class="panel-header">
           <h2>Orders</h2>
+          <div class="client-orders-controls">
+            <label class="filter">
+              <span>Status</span>
+              <select id="orderStatusFilter">
+                <option value="all">All</option>
+                <option value="pending">Unfulfilled</option>
+                <option value="fulfilled">Fulfilled</option>
+              </select>
+            </label>
+            <label class="filter">
+              <span>Date</span>
+              <select id="orderDateFilter">
+                <option value="all">All time</option>
+                <option value="today">Today</option>
+                <option value="week">This week</option>
+                <option value="month">This month</option>
+                <option value="custom">Custom range</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div
+          id="customDateRange"
+          class="custom-date-range"
+          style="display: none"
+        >
+          <label class="filter">
+            <span>From</span>
+            <input type="date" id="dateFrom" />
+          </label>
+          <label class="filter">
+            <span>To</span>
+            <input type="date" id="dateTo" />
+          </label>
         </div>
         <div id="ordersList" class="card-list" role="list"></div>
         <p class="empty-state" data-for="client-orders">
@@ -71,7 +161,7 @@
     </main>
 
     <template id="orderCardTemplate">
-      <article class="card" role="listitem">
+      <article class="card order-card" role="listitem">
         <header>
           <h3 class="card-title"></h3>
           <span class="status-pill"></span>
@@ -79,8 +169,121 @@
         <p class="card-detail delivery-date"></p>
         <p class="card-detail"></p>
         <p class="card-detail"></p>
+        <footer>
+          <button class="ghost-button order-edit-button" style="display: none">
+            Edit
+          </button>
+        </footer>
       </article>
     </template>
+
+    <!-- Order Edit Modal (similar to orders tab) -->
+    <div
+      id="orderDialog"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="orderFormTitle"
+      hidden
+    >
+      <div class="modal-overlay" data-close-dialog></div>
+      <div class="modal-content">
+        <form id="orderForm">
+          <header>
+            <h2 id="orderFormTitle">Update order</h2>
+            <button
+              type="button"
+              class="ghost-button"
+              id="closeDialog"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </header>
+          <section class="form-grid">
+            <div class="input-group">
+              <label for="orderDeliveryDate">Delivery date</label>
+              <input
+                id="orderDeliveryDate"
+                name="deliveryDate"
+                type="date"
+                required
+              />
+            </div>
+            <div class="input-group">
+              <label for="orderBouquetType">Bouquet type</label>
+              <select id="orderBouquetType" name="bouquetType" required>
+                <option value="Peony Sunrise">Peony Sunrise</option>
+                <option value="Lavender Mist">Lavender Mist</option>
+                <option value="Autumn Ember">Autumn Ember</option>
+                <option value="Emerald Cascade">Emerald Cascade</option>
+                <option value="Rose Quartz">Rose Quartz</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="orderPriceHkd">Price (HKD)</label>
+              <input
+                id="orderPriceHkd"
+                name="priceHkd"
+                type="text"
+                inputmode="decimal"
+                placeholder="$1500.00"
+                required
+              />
+            </div>
+            <div class="input-group">
+              <label for="orderDeliveryTimeSlot">Delivery time</label>
+              <select
+                id="orderDeliveryTimeSlot"
+                name="deliveryTimeSlot"
+                required
+              >
+                <option value="10am-12pm">10am – 12pm</option>
+                <option value="1pm-3pm">1pm – 3pm</option>
+                <option value="3pm-5pm">3pm – 5pm</option>
+                <option value="self-pickup">Self pickup</option>
+              </select>
+            </div>
+            <div class="input-group span-2">
+              <label for="orderCardMessage">Message on card</label>
+              <textarea
+                id="orderCardMessage"
+                name="cardMessage"
+                rows="3"
+                required
+              ></textarea>
+            </div>
+            <div class="input-group span-2">
+              <label for="orderDeliveryAddress">Delivery address</label>
+              <textarea
+                id="orderDeliveryAddress"
+                name="deliveryAddress"
+                rows="2"
+                placeholder="Recipient name, venue, delivery window"
+                required
+              ></textarea>
+            </div>
+            <div class="input-group">
+              <label for="orderStatus">Status</label>
+              <select id="orderStatus" name="orderStatus">
+                <option value="pending">Unfulfilled</option>
+                <option value="fulfilled">Fulfilled</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="orderNotes">Internal notes</label>
+              <textarea id="orderNotes" name="notes" rows="2"></textarea>
+            </div>
+          </section>
+          <footer>
+            <button class="ghost-button" type="button" id="deleteOrder">
+              Delete
+            </button>
+            <button class="primary-button" type="submit">Save order</button>
+          </footer>
+        </form>
+      </div>
+    </div>
 
     <div class="toast" role="status" aria-live="polite" hidden></div>
 
@@ -88,4 +291,3 @@
     <script type="module" src="js/client.js"></script>
   </body>
 </html>
-

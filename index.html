@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kew Garden Flowers · Order Manager</title>
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#e0724c" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="KGF Orders" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -21,9 +30,14 @@
           <p class="brand-tagline">Order Manager</p>
         </div>
       </div>
-      <button id="signOut" class="ghost-button" aria-label="Sign out">
-        Sign out
-      </button>
+      <div style="display: flex; gap: 0.5rem; align-items: center">
+        <a href="settings.html" class="ghost-button" aria-label="Settings"
+          >⚙️</a
+        >
+        <button id="signOut" class="ghost-button" aria-label="Sign out">
+          Sign out
+        </button>
+      </div>
     </header>
 
     <main>
@@ -46,6 +60,7 @@
       <nav class="tab-nav" aria-label="Dashboard sections">
         <button class="tab-button active" data-target="orders">Orders</button>
         <button class="tab-button" data-target="clients">Clients</button>
+        <button class="tab-button" data-target="invoices">Invoices</button>
         <button class="tab-button" data-target="calendar">Calendar</button>
       </nav>
 
@@ -70,10 +85,74 @@
       <section id="clients" class="tab-panel" aria-labelledby="Clients">
         <div class="panel-header">
           <h2>Clients</h2>
+          <div class="client-sort-controls">
+            <label class="filter">
+              <span>Sort by</span>
+              <select id="clientSortBy">
+                <option value="name">Name (A-Z)</option>
+                <option value="orders">Order Count</option>
+                <option value="total">Total Spent</option>
+                <option value="recent">Recent Activity</option>
+              </select>
+            </label>
+            <input
+              type="search"
+              id="clientSearch"
+              placeholder="Search clients..."
+              style="
+                padding: 0.4rem 0.75rem;
+                border-radius: 999px;
+                border: 1px solid var(--border);
+                font: inherit;
+                min-width: 200px;
+              "
+            />
+          </div>
+        </div>
+        <div id="clientStats" class="client-stats" style="display: none">
+          <div class="client-stat">
+            <span class="client-stat-label">Total Clients</span>
+            <span class="client-stat-value" id="totalClients">0</span>
+          </div>
+          <div class="client-stat">
+            <span class="client-stat-label">Total Revenue</span>
+            <span class="client-stat-value" id="totalRevenue">HKD 0</span>
+          </div>
         </div>
         <div id="clientsList" class="card-list" role="list"></div>
         <p class="empty-state" data-for="clients">
           Client profiles will appear here once orders are saved.
+        </p>
+      </section>
+
+      <section id="invoices" class="tab-panel" aria-labelledby="Invoices">
+        <div class="panel-header">
+          <h2>Invoices</h2>
+          <div
+            style="
+              display: flex;
+              gap: 0.75rem;
+              align-items: center;
+              flex-wrap: wrap;
+            "
+          >
+            <button id="createInvoiceButton" class="primary-button">
+              + Create invoice
+            </button>
+            <label class="filter">
+              <span>Status</span>
+              <select id="invoiceStatusFilter">
+                <option value="all">All</option>
+                <option value="draft">Draft</option>
+                <option value="sent">Sent</option>
+                <option value="paid">Paid</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div id="invoicesList" class="card-list" role="list"></div>
+        <p class="empty-state" data-for="invoices">
+          No invoices yet. Create your first invoice to get started.
         </p>
       </section>
 
@@ -252,7 +331,131 @@
       </article>
     </template>
 
+    <template id="invoiceCardTemplate">
+      <article class="card" role="listitem">
+        <header>
+          <h3 class="card-title"></h3>
+          <span class="status-pill"></span>
+        </header>
+        <p class="card-detail"></p>
+        <p class="card-detail"></p>
+        <footer
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+          "
+        >
+          <span class="invoice-amount"></span>
+          <div style="display: flex; gap: 0.5rem">
+            <button class="ghost-button btn-view">View</button>
+            <button class="ghost-button btn-download">PDF</button>
+          </div>
+        </footer>
+      </article>
+    </template>
+
+    <div
+      id="invoiceDialog"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="invoiceFormTitle"
+      hidden
+    >
+      <div class="modal-overlay" data-close-invoice-dialog></div>
+      <div class="modal-content" style="max-width: 720px">
+        <form id="invoiceForm">
+          <header>
+            <h2 id="invoiceFormTitle">Create invoice</h2>
+            <button
+              type="button"
+              class="ghost-button"
+              id="closeInvoiceDialog"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </header>
+          <section class="form-grid">
+            <div class="input-group">
+              <label for="invoiceClient">Client</label>
+              <select id="invoiceClient" name="invoiceClient" required>
+                <option value="">Select client...</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="invoiceNumber">Invoice number</label>
+              <input
+                id="invoiceNumber"
+                name="invoiceNumber"
+                type="text"
+                required
+                readonly
+              />
+            </div>
+            <div class="input-group">
+              <label for="invoiceDate">Invoice date</label>
+              <input id="invoiceDate" name="invoiceDate" type="date" required />
+            </div>
+            <div class="input-group">
+              <label for="invoiceDueDate">Due date</label>
+              <input id="invoiceDueDate" name="invoiceDueDate" type="date" />
+            </div>
+            <div class="input-group span-2">
+              <label>Select orders to include</label>
+              <div
+                id="invoiceOrdersList"
+                style="
+                  max-height: 200px;
+                  overflow-y: auto;
+                  border: 1px solid rgba(47, 44, 40, 0.1);
+                  border-radius: 12px;
+                  padding: 0.75rem;
+                "
+              >
+                <p style="color: var(--text-muted); font-size: 0.9rem">
+                  Select a client to see their orders
+                </p>
+              </div>
+            </div>
+            <div class="input-group span-2">
+              <label for="invoiceNotes">Notes (optional)</label>
+              <textarea
+                id="invoiceNotes"
+                name="invoiceNotes"
+                rows="2"
+              ></textarea>
+            </div>
+            <div class="input-group">
+              <label>Subtotal</label>
+              <input id="invoiceSubtotal" type="text" readonly value="$0.00" />
+            </div>
+            <div class="input-group">
+              <label>Total</label>
+              <input
+                id="invoiceTotal"
+                type="text"
+                readonly
+                value="$0.00"
+                style="font-weight: 600"
+              />
+            </div>
+          </section>
+          <footer>
+            <button class="ghost-button" type="button" id="deleteInvoice">
+              Delete
+            </button>
+            <button class="primary-button" type="submit">Save invoice</button>
+          </footer>
+        </form>
+      </div>
+    </div>
+
     <script type="module" src="js/config.js"></script>
     <script type="module" src="js/app.js"></script>
+    <script type="module" src="js/pwa.js"></script>
   </body>
 </html>

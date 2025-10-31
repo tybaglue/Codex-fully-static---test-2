@@ -44,6 +44,18 @@ const tabButtons = [...document.querySelectorAll('.tab-button')];
 const tabPanels = [...document.querySelectorAll('.tab-panel')];
 const emptyStates = [...document.querySelectorAll('.empty-state')];
 
+// Invoice-related elements
+const createInvoiceButton = document.getElementById('createInvoiceButton');
+const invoicesList = document.getElementById('invoicesList');
+const invoiceDialog = document.getElementById('invoiceDialog');
+const invoiceForm = document.getElementById('invoiceForm');
+const invoiceFormTitle = document.getElementById('invoiceFormTitle');
+const closeInvoiceDialogButton = document.getElementById('closeInvoiceDialog');
+const deleteInvoiceButton = document.getElementById('deleteInvoice');
+const invoiceStatusFilter = document.getElementById('invoiceStatusFilter');
+const invoiceOrdersList = document.getElementById('invoiceOrdersList');
+const invoiceClientSelect = document.getElementById('invoiceClient');
+
 // Simple passcode lock removed in favor of Supabase Email OTP
 
 const isConfigured =
@@ -63,8 +75,14 @@ const supabase = isConfigured
   : null;
 
 let orders = [];
+let invoices = [];
+let bouquetTypes = [];
 let editingOrderId = null;
+let editingInvoiceId = null;
 let authSession = null;
+let selectedOrdersForInvoice = new Set();
+let activeTab = localStorage.getItem('lastActiveTab') || 'orders';
+let fetchOrdersPromise = null;
 
 function showToast(message, duration = 2400) {
   if (!toast) return;
@@ -83,6 +101,12 @@ function setEmptyState(panelId, isVisible) {
 }
 
 function switchTab(targetId) {
+  activeTab = targetId;
+  try {
+    localStorage.setItem('lastActiveTab', targetId);
+  } catch (error) {
+    console.warn('Unable to persist active tab:', error);
+  }
   tabButtons.forEach((button) => {
     const isActive = button.dataset.target === targetId;
     button.classList.toggle('active', isActive);
@@ -99,6 +123,8 @@ function switchTab(targetId) {
     renderOrders();
   } else if (targetId === 'calendar') {
     renderCalendar();
+  } else if (targetId === 'invoices') {
+    renderInvoices();
   }
 }
 
@@ -151,8 +177,55 @@ function ensureDeliveryTimeOption(value, label = value) {
 
 function formatDeliveryTimeSlot(slotValue) {
   if (!slotValue) return '';
-  const match = DELIVERY_TIME_SLOTS.find((slot) => slot.value === slotValue);
-  return match ? slot.label : slotValue;
+  for (const entry of DELIVERY_TIME_SLOTS) {
+    if (entry.value === slotValue) {
+      return entry.label;
+    }
+  }
+  return slotValue;
+}
+
+// Load bouquet types from database
+async function loadBouquetTypes() {
+  if (!supabase) return;
+
+  const { data, error } = await supabase
+    .from('bouquet_types')
+    .select('*')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true });
+
+  if (error) {
+    console.error('Error loading bouquet types:', error);
+    return;
+  }
+
+  bouquetTypes = data || [];
+  populateBouquetDropdown();
+}
+
+// Populate bouquet type dropdown
+function populateBouquetDropdown() {
+  if (!bouquetTypeSelect) return;
+
+  // Clear existing options
+  bouquetTypeSelect.innerHTML = '';
+
+  bouquetTypes.forEach((bouquet) => {
+    const option = document.createElement('option');
+    option.value = bouquet.name;
+    option.textContent = bouquet.name;
+    option.dataset.price = bouquet.price_hkd || '';
+    bouquetTypeSelect.appendChild(option);
+  });
+
+  // Auto-fill price when bouquet is selected
+  bouquetTypeSelect.addEventListener('change', function () {
+    const selectedOption = this.options[this.selectedIndex];
+    if (selectedOption && selectedOption.dataset.price && priceHkdInput) {
+      priceHkdInput.value = selectedOption.dataset.price;
+    }
+  });
 }
 
 function clearList(list) {
@@ -162,8 +235,10 @@ function clearList(list) {
 }
 
 function renderOrders() {
+  if (!ordersList) return;
   clearList(ordersList);
-  const filter = statusFilter.value;
+
+  const filter = statusFilter ? statusFilter.value : 'all';
 
   const filteredOrders = orders.filter((order) => {
     if (filter === 'all') return true;
@@ -177,6 +252,10 @@ function renderOrders() {
   setEmptyState('orders', false);
 
   const template = document.getElementById('orderCardTemplate');
+  if (!template) {
+    console.warn('Order card template not found.');
+    return;
+  }
 
   filteredOrders.forEach((order) => {
     const clone = template.content.firstElementChild.cloneNode(true);
@@ -206,12 +285,10 @@ function renderOrders() {
       if (!supabase) return;
 
       const newStatus = order.status === 'fulfilled' ? 'pending' : 'fulfilled';
+      const oldStatus = order.status;
 
       // Optimistic UI update
       order.status = newStatus;
-      pill.dataset.status = newStatus;
-      pill.textContent =
-        newStatus === 'fulfilled' ? 'Fulfilled' : 'Unfulfilled';
 
       const { error } = await supabase
         .from('orders')
@@ -220,18 +297,19 @@ function renderOrders() {
 
       if (error) {
         // Revert on error
-        order.status = newStatus === 'fulfilled' ? 'pending' : 'fulfilled';
-        pill.dataset.status = order.status;
-        pill.textContent =
-          order.status === 'fulfilled' ? 'Fulfilled' : 'Unfulfilled';
+        order.status = oldStatus;
         console.error(error);
         showToast('Could not update status.');
+        renderOrders();
         return;
       }
 
       showToast(
         newStatus === 'fulfilled' ? 'Marked fulfilled' : 'Marked unfulfilled'
       );
+
+      // Re-render to respect current filter
+      renderOrders();
     });
 
     const openButton = clone.querySelector('button');
@@ -245,6 +323,11 @@ function renderClients() {
   clearList(clientsList);
   const clientMap = new Map();
 
+  // Get sorting and search preferences
+  const sortBy = document.getElementById('clientSortBy')?.value || 'name';
+  const searchTerm =
+    document.getElementById('clientSearch')?.value.toLowerCase() || '';
+
   orders.forEach((order) => {
     const key = order.client_email || order.client_phone || order.client_name;
     const codeFromOrder =
@@ -257,6 +340,8 @@ function renderClients() {
       client_phone: order.client_phone,
       client_code: codeFromOrder,
       orders: [],
+      totalSpent: 0,
+      lastOrderDate: null,
     };
 
     // Preserve a non-empty client_code if we encounter it later
@@ -265,12 +350,70 @@ function renderClients() {
     }
 
     existing.orders.push(order);
+
+    // Calculate total spent
+    if (order.price_hkd) {
+      existing.totalSpent += parseFloat(order.price_hkd);
+    }
+
+    // Track last order date
+    if (order.created_at) {
+      const orderDate = new Date(order.created_at);
+      if (!existing.lastOrderDate || orderDate > existing.lastOrderDate) {
+        existing.lastOrderDate = orderDate;
+      }
+    }
+
     clientMap.set(key, existing);
   });
 
-  const clients = [...clientMap.values()].sort((a, b) =>
-    a.client_name.localeCompare(b.client_name)
-  );
+  let clients = [...clientMap.values()];
+
+  // Apply search filter
+  if (searchTerm) {
+    clients = clients.filter(
+      (client) =>
+        client.client_name.toLowerCase().includes(searchTerm) ||
+        (client.client_email &&
+          client.client_email.toLowerCase().includes(searchTerm)) ||
+        (client.client_phone &&
+          client.client_phone.toLowerCase().includes(searchTerm))
+    );
+  }
+
+  // Apply sorting
+  clients.sort((a, b) => {
+    switch (sortBy) {
+      case 'orders':
+        return b.orders.length - a.orders.length;
+      case 'total':
+        return b.totalSpent - a.totalSpent;
+      case 'recent':
+        return (b.lastOrderDate || 0) - (a.lastOrderDate || 0);
+      case 'name':
+      default:
+        return a.client_name.localeCompare(b.client_name);
+    }
+  });
+
+  // Update client stats
+  const statsDiv = document.getElementById('clientStats');
+  const totalClientsEl = document.getElementById('totalClients');
+  const totalRevenueEl = document.getElementById('totalRevenue');
+
+  if (clients.length > 0 && statsDiv) {
+    statsDiv.style.display = 'flex';
+    if (totalClientsEl) totalClientsEl.textContent = clients.length;
+
+    const totalRevenue = clients.reduce(
+      (sum, client) => sum + client.totalSpent,
+      0
+    );
+    if (totalRevenueEl)
+      totalRevenueEl.textContent = `HKD ${totalRevenue.toFixed(2)}`;
+  } else if (statsDiv) {
+    statsDiv.style.display = 'none';
+  }
 
   if (clients.length === 0) {
     setEmptyState('clients', true);
@@ -279,6 +422,10 @@ function renderClients() {
   setEmptyState('clients', false);
 
   const template = document.getElementById('clientCardTemplate');
+  if (!template) {
+    console.warn('Client card template not found.');
+    return;
+  }
 
   clients.forEach((client) => {
     const clone = template.content.firstElementChild.cloneNode(true);
@@ -290,9 +437,16 @@ function renderClients() {
     const details = clone.querySelectorAll('.card-detail');
     details[0].textContent = client.client_phone || '';
     details[1].textContent = client.client_email || '';
-    clone.querySelector('.order-count').textContent = `${
-      client.orders.length
-    } order${client.orders.length === 1 ? '' : 's'}`;
+
+    const orderCount = clone.querySelector('.order-count');
+    orderCount.textContent = `${client.orders.length} order${
+      client.orders.length === 1 ? '' : 's'
+    }`;
+
+    // Add total spent info
+    if (client.totalSpent > 0) {
+      orderCount.textContent += ` · HKD ${client.totalSpent.toFixed(2)}`;
+    }
 
     // Navigate to client details page on title click
     titleEl.style.cursor = 'pointer';
@@ -312,6 +466,19 @@ function renderClients() {
 
     clientsList.appendChild(clone);
   });
+}
+
+function initClientControls() {
+  const sortBy = document.getElementById('clientSortBy');
+  const search = document.getElementById('clientSearch');
+
+  if (sortBy) {
+    sortBy.addEventListener('change', renderClients);
+  }
+
+  if (search) {
+    search.addEventListener('input', renderClients);
+  }
 }
 
 function renderCalendar() {
@@ -557,6 +724,10 @@ function closeOrderDialog() {
 }
 
 async function fetchOrders() {
+  if (fetchOrdersPromise) {
+    return fetchOrdersPromise;
+  }
+
   if (!supabase) {
     console.warn(
       'Supabase is not configured. Update js/config.js with your project keys.'
@@ -565,26 +736,42 @@ async function fetchOrders() {
     setEmptyState('orders', true);
     setEmptyState('clients', true);
     setEmptyState('calendar', true);
-    return;
+    setEmptyState('invoices', true);
+    return Promise.resolve();
   }
 
-  const { data, error } = await supabase
+  fetchOrdersPromise = supabase
     .from('orders')
     .select(
       `id, client_id, client_name, client_phone, client_email, delivery_date, bouquet_type, price_hkd, delivery_time_slot, card_message, delivery_address, status, internal_notes, created_at, clients ( client_code )`
     )
-    .order('delivery_date', { ascending: true, nullsFirst: false });
+    .order('delivery_date', { ascending: true, nullsFirst: false })
+    .then(async ({ data, error }) => {
+      if (error) {
+        console.error(error);
+        showToast("Couldn't load orders. Check Supabase settings.");
+        return;
+      }
 
-  if (error) {
-    console.error(error);
-    showToast("Couldn't load orders. Check Supabase settings.");
-    return;
-  }
+      orders = data || [];
+      renderOrders();
+      renderClients();
+      renderCalendar();
 
-  orders = data || [];
-  renderOrders();
-  renderClients();
-  renderCalendar();
+      // Re-render the currently active tab to ensure latest data appears
+      if (activeTab) {
+        switchTab(activeTab);
+      }
+
+      // Also load invoices and bouquet types
+      await fetchInvoices();
+      await loadBouquetTypes();
+    })
+    .finally(() => {
+      fetchOrdersPromise = null;
+    });
+
+  return fetchOrdersPromise;
 }
 
 async function saveOrder(event) {
@@ -663,9 +850,488 @@ async function deleteOrder() {
   await fetchOrders();
 }
 
+// ============= INVOICE MANAGEMENT =============
+
+async function fetchInvoices() {
+  if (!supabase) {
+    setEmptyState('invoices', true);
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('invoices')
+    .select('*')
+    .order('invoice_date', { ascending: false });
+
+  if (error) {
+    console.error(error);
+    showToast("Couldn't load invoices.");
+    return;
+  }
+
+  invoices = data || [];
+  renderInvoices();
+}
+
+function renderInvoices() {
+  if (!invoicesList) return;
+
+  clearList(invoicesList);
+  const filter = invoiceStatusFilter ? invoiceStatusFilter.value : 'all';
+
+  const filteredInvoices = invoices.filter((invoice) => {
+    if (filter === 'all') return true;
+    return invoice.status === filter;
+  });
+
+  if (filteredInvoices.length === 0) {
+    setEmptyState('invoices', true);
+    return;
+  }
+  setEmptyState('invoices', false);
+
+  const template = document.getElementById('invoiceCardTemplate');
+  if (!template) {
+    console.warn('Invoice card template not found.');
+    return;
+  }
+
+  filteredInvoices.forEach((invoice) => {
+    const clone = template.content.firstElementChild.cloneNode(true);
+
+    clone.querySelector(
+      '.card-title'
+    ).textContent = `${invoice.invoice_number} · ${invoice.client_name}`;
+
+    const pill = clone.querySelector('.status-pill');
+    pill.dataset.status = invoice.status;
+    pill.textContent =
+      invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1);
+
+    const details = clone.querySelectorAll('.card-detail');
+    details[0].textContent = `Date: ${formatDate(invoice.invoice_date)}`;
+    details[1].textContent = invoice.due_date
+      ? `Due: ${formatDate(invoice.due_date)}`
+      : '';
+
+    const amountEl = clone.querySelector('.invoice-amount');
+    amountEl.textContent = `HKD ${parseFloat(invoice.total || 0).toFixed(2)}`;
+
+    // View button
+    const viewBtn = clone.querySelector('.btn-view');
+    viewBtn.addEventListener('click', () => openInvoiceDialog(invoice));
+
+    // Download PDF button
+    const downloadBtn = clone.querySelector('.btn-download');
+    downloadBtn.addEventListener('click', () => downloadInvoicePDF(invoice));
+
+    invoicesList.appendChild(clone);
+  });
+}
+
+async function openInvoiceDialog(invoice = null) {
+  // Populate client dropdown
+  await populateClientDropdown();
+
+  if (invoice) {
+    editingInvoiceId = invoice.id;
+    invoiceFormTitle.textContent = 'View/Edit invoice';
+    invoiceForm.invoiceNumber.value = invoice.invoice_number || '';
+    invoiceForm.invoiceDate.value = invoice.invoice_date || '';
+    invoiceForm.invoiceDueDate.value = invoice.due_date || '';
+    invoiceForm.invoiceNotes.value = invoice.notes || '';
+    invoiceForm.invoiceSubtotal.value = `HKD ${parseFloat(
+      invoice.subtotal || 0
+    ).toFixed(2)}`;
+    invoiceForm.invoiceTotal.value = `HKD ${parseFloat(
+      invoice.total || 0
+    ).toFixed(2)}`;
+
+    // Load invoice items
+    await loadInvoiceItems(invoice.id);
+
+    if (deleteInvoiceButton) {
+      deleteInvoiceButton.hidden = false;
+    }
+  } else {
+    resetInvoiceForm();
+    // Generate new invoice number
+    const invoiceNumber = await generateInvoiceNumber();
+    invoiceForm.invoiceNumber.value = invoiceNumber;
+    invoiceForm.invoiceDate.value = new Date().toISOString().split('T')[0];
+  }
+
+  if (invoiceDialog) {
+    invoiceDialog.hidden = false;
+    document.body.classList.add('dialog-open');
+  }
+}
+
+function closeInvoiceDialog() {
+  if (invoiceDialog) {
+    invoiceDialog.hidden = true;
+  }
+  document.body.classList.remove('dialog-open');
+  resetInvoiceForm();
+}
+
+function resetInvoiceForm() {
+  invoiceForm.reset();
+  editingInvoiceId = null;
+  selectedOrdersForInvoice.clear();
+  if (deleteInvoiceButton) {
+    deleteInvoiceButton.hidden = true;
+  }
+  invoiceFormTitle.textContent = 'Create invoice';
+  invoiceForm.invoiceSubtotal.value = 'HKD 0.00';
+  invoiceForm.invoiceTotal.value = 'HKD 0.00';
+  if (invoiceOrdersList) {
+    invoiceOrdersList.innerHTML =
+      '<p style="color: var(--text-muted); font-size: 0.9rem;">Select a client to see their orders</p>';
+  }
+}
+
+async function populateClientDropdown() {
+  if (!invoiceClientSelect) return;
+
+  // Get unique clients from orders
+  const clientMap = new Map();
+  orders.forEach((order) => {
+    const key = order.client_email || order.client_phone || order.client_name;
+    if (!clientMap.has(key)) {
+      clientMap.set(key, {
+        name: order.client_name,
+        email: order.client_email,
+        phone: order.client_phone,
+        id: order.client_id,
+      });
+    }
+  });
+
+  invoiceClientSelect.innerHTML = '<option value="">Select client...</option>';
+
+  Array.from(clientMap.values())
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((client) => {
+      const option = document.createElement('option');
+      option.value = JSON.stringify(client);
+      option.textContent = client.name;
+      invoiceClientSelect.appendChild(option);
+    });
+
+  // Listen for client selection change
+  invoiceClientSelect.removeEventListener('change', loadClientOrders);
+  invoiceClientSelect.addEventListener('change', loadClientOrders);
+}
+
+async function loadClientOrders() {
+  if (!invoiceClientSelect || !invoiceClientSelect.value) {
+    if (invoiceOrdersList) {
+      invoiceOrdersList.innerHTML =
+        '<p style="color: var(--text-muted); font-size: 0.9rem;">Select a client to see their orders</p>';
+    }
+    return;
+  }
+
+  const client = JSON.parse(invoiceClientSelect.value);
+
+  selectedOrdersForInvoice.clear();
+  if (invoiceForm) {
+    invoiceForm.invoiceSubtotal.value = 'HKD 0.00';
+    invoiceForm.invoiceTotal.value = 'HKD 0.00';
+  }
+
+  // Filter orders for this client
+  const clientOrders = orders.filter(
+    (order) =>
+      order.client_name === client.name &&
+      order.price_hkd &&
+      parseFloat(order.price_hkd) > 0
+  );
+
+  if (clientOrders.length === 0) {
+    invoiceOrdersList.innerHTML =
+      '<p style="color: var(--text-muted); font-size: 0.9rem;">No orders with prices for this client</p>';
+    return;
+  }
+
+  // Render order checkboxes
+  invoiceOrdersList.innerHTML = '';
+  clientOrders.forEach((order) => {
+    const div = document.createElement('div');
+    div.className = 'order-checkbox-item';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = `order-${order.id}`;
+    checkbox.value = order.id;
+    checkbox.dataset.price = order.price_hkd;
+
+    const label = document.createElement('label');
+    label.htmlFor = `order-${order.id}`;
+    label.innerHTML = `
+      ${order.bouquet_type || 'Order'} - HKD ${parseFloat(
+      order.price_hkd
+    ).toFixed(2)}
+      <span>${formatDate(order.delivery_date)}</span>
+    `;
+
+    checkbox.addEventListener('change', updateInvoiceTotals);
+
+    div.appendChild(checkbox);
+    div.appendChild(label);
+    invoiceOrdersList.appendChild(div);
+  });
+}
+
+function updateInvoiceTotals() {
+  const checkboxes = invoiceOrdersList.querySelectorAll(
+    'input[type="checkbox"]:checked'
+  );
+  let subtotal = 0;
+
+  selectedOrdersForInvoice.clear();
+  checkboxes.forEach((cb) => {
+    subtotal += parseFloat(cb.dataset.price || 0);
+    selectedOrdersForInvoice.add(cb.value);
+  });
+
+  const total = subtotal; // Can add tax calculation here if needed
+
+  invoiceForm.invoiceSubtotal.value = `HKD ${subtotal.toFixed(2)}`;
+  invoiceForm.invoiceTotal.value = `HKD ${total.toFixed(2)}`;
+}
+
+async function generateInvoiceNumber() {
+  if (!supabase) return 'INV-0001';
+
+  const { data, error } = await supabase.rpc('generate_invoice_number');
+
+  if (error || !data) {
+    // Fallback: generate based on count
+    const count = invoices.length + 1;
+    const today = new Date();
+    const yearMonth = today.toISOString().slice(0, 7).replace('-', '');
+    return `INV-${yearMonth}-${String(count).padStart(4, '0')}`;
+  }
+
+  return data;
+}
+
+async function loadInvoiceItems(invoiceId) {
+  if (!supabase) return;
+
+  const { data, error } = await supabase
+    .from('invoice_items')
+    .select('*')
+    .eq('invoice_id', invoiceId);
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  // Display items in the orders list area
+  if (data && data.length > 0 && invoiceOrdersList) {
+    invoiceOrdersList.innerHTML = '';
+    data.forEach((item) => {
+      const div = document.createElement('div');
+      div.className = 'order-checkbox-item';
+      div.innerHTML = `
+        <label style="pointer-events: none;">
+          ${item.description} - HKD ${parseFloat(item.amount).toFixed(2)}
+          <span>Qty: ${item.quantity} × ${parseFloat(item.unit_price).toFixed(
+        2
+      )}</span>
+        </label>
+      `;
+      invoiceOrdersList.appendChild(div);
+    });
+  }
+}
+
+async function saveInvoice(event) {
+  event.preventDefault();
+  if (!supabase) {
+    showToast('Configure Supabase to enable saving.');
+    return;
+  }
+
+  if (!invoiceClientSelect.value) {
+    showToast('Please select a client.');
+    return;
+  }
+
+  const client = JSON.parse(invoiceClientSelect.value);
+
+  // Extract numeric values from formatted strings
+  const subtotalStr = invoiceForm.invoiceSubtotal.value.replace(/[^0-9.]/g, '');
+  const totalStr = invoiceForm.invoiceTotal.value.replace(/[^0-9.]/g, '');
+
+  const subtotal = parseFloat(subtotalStr) || 0;
+  const total = parseFloat(totalStr) || 0;
+
+  if (total === 0 && selectedOrdersForInvoice.size === 0) {
+    showToast('Please select at least one order or add items.');
+    return;
+  }
+
+  const invoicePayload = {
+    invoice_number: invoiceForm.invoiceNumber.value,
+    client_id: client.id,
+    client_name: client.name,
+    client_email: client.email,
+    client_phone: client.phone,
+    invoice_date: invoiceForm.invoiceDate.value,
+    due_date: invoiceForm.invoiceDueDate.value || null,
+    subtotal: subtotal,
+    tax: 0,
+    total: total,
+    status: 'draft',
+    notes: invoiceForm.invoiceNotes.value.trim() || null,
+  };
+
+  let invoiceId;
+
+  if (editingInvoiceId) {
+    const { error } = await supabase
+      .from('invoices')
+      .update(invoicePayload)
+      .eq('id', editingInvoiceId);
+
+    if (error) {
+      console.error(error);
+      showToast('Could not update invoice.');
+      return;
+    }
+    invoiceId = editingInvoiceId;
+  } else {
+    const { data, error } = await supabase
+      .from('invoices')
+      .insert(invoicePayload)
+      .select();
+
+    if (error) {
+      console.error(error);
+      showToast('Could not create invoice.');
+      return;
+    }
+    invoiceId = data[0].id;
+
+    // Create invoice items
+    if (selectedOrdersForInvoice.size > 0) {
+      const items = Array.from(selectedOrdersForInvoice)
+        .map((orderId) => {
+          // Find order by comparing as strings to handle type mismatches
+          const order = orders.find((o) => String(o.id) === String(orderId));
+
+          if (!order) {
+            console.warn(`Order with ID ${orderId} not found in orders array`);
+            return null;
+          }
+
+          return {
+            invoice_id: invoiceId,
+            order_id: order.id,
+            description: `${order.bouquet_type || 'Bouquet'} - ${formatDate(
+              order.delivery_date
+            )}`,
+            quantity: 1,
+            unit_price: parseFloat(order.price_hkd) || 0,
+            amount: parseFloat(order.price_hkd) || 0,
+          };
+        })
+        .filter((item) => item !== null); // Remove any null entries
+
+      if (items.length > 0) {
+        const { error: itemsError } = await supabase
+          .from('invoice_items')
+          .insert(items);
+
+        if (itemsError) {
+          console.error('Error creating invoice items:', itemsError);
+          showToast('Invoice created but some items failed to save.');
+        }
+      }
+    }
+  }
+
+  closeInvoiceDialog();
+  showToast(editingInvoiceId ? 'Invoice updated' : 'Invoice created');
+  await fetchInvoices();
+}
+
+async function deleteInvoice() {
+  if (!supabase || !editingInvoiceId) {
+    closeInvoiceDialog();
+    return;
+  }
+
+  const confirmation = confirm('Delete this invoice? This cannot be undone.');
+  if (!confirmation) return;
+
+  const { error } = await supabase
+    .from('invoices')
+    .delete()
+    .eq('id', editingInvoiceId);
+
+  if (error) {
+    console.error(error);
+    showToast('Could not delete invoice.');
+    return;
+  }
+
+  closeInvoiceDialog();
+  showToast('Invoice deleted');
+  await fetchInvoices();
+}
+
+async function downloadInvoicePDF(invoice) {
+  showToast('PDF generation coming soon...', 2000);
+  // TODO: Implement PDF generation using jsPDF or pdfmake
+  console.log('Generate PDF for invoice:', invoice);
+}
+
 function initTabs() {
   tabButtons.forEach((button) => {
-    button.addEventListener('click', () => switchTab(button.dataset.target));
+    button.addEventListener('click', () => {
+      switchTab(button.dataset.target);
+      // Persist tab selection
+      localStorage.setItem('lastActiveTab', button.dataset.target);
+    });
+  });
+
+  // Restore tab from URL parameter or localStorage
+  const urlParams = new URLSearchParams(window.location.search);
+  const tabParam = urlParams.get('tab');
+  const savedTab = localStorage.getItem('lastActiveTab');
+
+  if (tabParam) {
+    activeTab = tabParam;
+    localStorage.setItem('lastActiveTab', tabParam);
+    // Don't call switchTab yet - let fetchOrders handle rendering after data loads
+  } else if (savedTab) {
+    activeTab = savedTab;
+    // Don't call switchTab yet - let fetchOrders handle rendering after data loads
+  }
+
+  const availableTabs = new Set(tabButtons.map((button) => button.dataset.target));
+  if (!availableTabs.has(activeTab)) {
+    activeTab = 'orders';
+    try {
+      localStorage.setItem('lastActiveTab', activeTab);
+    } catch (error) {
+      console.warn('Unable to persist default tab selection:', error);
+    }
+  }
+
+  // Set the UI state for active tab button
+  tabButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.target === activeTab);
+  });
+
+  tabPanels.forEach((panel) => {
+    panel.classList.toggle('active', panel.id === activeTab);
   });
 }
 
@@ -682,6 +1348,39 @@ function initDialog() {
   });
   deleteOrderButton.addEventListener('click', deleteOrder);
   orderForm.addEventListener('submit', saveOrder);
+}
+
+function initInvoiceDialog() {
+  if (!createInvoiceButton || !invoiceDialog) return;
+
+  createInvoiceButton.addEventListener('click', () => openInvoiceDialog());
+  closeInvoiceDialogButton.addEventListener('click', closeInvoiceDialog);
+
+  const invoiceModalOverlay = invoiceDialog.querySelector(
+    '[data-close-invoice-dialog]'
+  );
+  if (invoiceModalOverlay) {
+    invoiceModalOverlay.addEventListener('click', closeInvoiceDialog);
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && invoiceDialog && !invoiceDialog.hidden) {
+      closeInvoiceDialog();
+    }
+  });
+
+  if (deleteInvoiceButton) {
+    deleteInvoiceButton.addEventListener('click', deleteInvoice);
+    deleteInvoiceButton.hidden = true;
+  }
+
+  invoiceForm.addEventListener('submit', saveInvoice);
+}
+
+function initInvoiceFilter() {
+  if (invoiceStatusFilter) {
+    invoiceStatusFilter.addEventListener('change', renderInvoices);
+  }
 }
 
 function initStatusFilter() {
@@ -722,76 +1421,160 @@ async function initAuth() {
     return;
   }
 
-  const authContainer = document.createElement('section');
-  authContainer.className = 'auth-overlay';
-  authContainer.innerHTML = `
-    <div class="auth-card">
-      <h2>Sign in</h2>
-      <p>Use your business email and password to access the dashboard.</p>
-      <form id="authForm">
-        <label for="authEmail">Email address</label>
-        <input id="authEmail" type="email" required placeholder="you@kewgardenflowers.com" />
-        <label for="authPassword">Password</label>
-        <input id="authPassword" type="password" required placeholder="Password" minlength="6" />
-        <button type="submit" class="primary-button">Sign in</button>
-      </form>
-      <p class="auth-note">Use the password you set in Supabase Auth.</p>
-    </div>`;
-
-  document.body.appendChild(authContainer);
+  let authContainer = document.querySelector('.auth-overlay');
+  if (!authContainer) {
+    authContainer = document.createElement('section');
+    authContainer.className = 'auth-overlay';
+    authContainer.innerHTML = `
+      <div class="auth-card">
+        <h2>Sign in</h2>
+        <p>Use your business email and password to access the dashboard.</p>
+        <form id="authForm">
+          <label for="authEmail">Email address</label>
+          <input id="authEmail" type="email" required placeholder="you@kewgardenflowers.com" />
+          <label for="authPassword">Password</label>
+          <input id="authPassword" type="password" required placeholder="Password" minlength="6" />
+          <button type="submit" class="primary-button">Sign in</button>
+        </form>
+        <p class="auth-note">Use the password you set in Supabase Auth.</p>
+      </div>`;
+    document.body.appendChild(authContainer);
+  }
 
   const authForm = authContainer.querySelector('#authForm');
+  const authEmailInput = authForm?.querySelector('#authEmail');
+  const authPasswordInput = authForm?.querySelector('#authPassword');
+
+  function showAuthOverlay() {
+    if (authForm) authForm.reset();
+    authContainer.hidden = false;
+    authContainer.style.display = 'grid';
+    authContainer.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideAuthOverlay() {
+    authContainer.hidden = true;
+    authContainer.style.display = 'none';
+    authContainer.setAttribute('aria-hidden', 'true');
+  }
+
+  function resetDashboardState() {
+    orders = [];
+    invoices = [];
+    if (ordersList) clearList(ordersList);
+    if (clientsList) clearList(clientsList);
+    if (invoicesList) clearList(invoicesList);
+    if (calendarList) clearList(calendarList);
+    setEmptyState('orders', true);
+    setEmptyState('clients', true);
+    setEmptyState('invoices', true);
+    setEmptyState('calendar', true);
+  }
+
+  let isSigningIn = false;
+  let lastSessionToken = null;
 
   async function handleSession(session) {
+    const currentToken = session?.access_token || null;
+
+    // Avoid duplicate work if the session is unchanged
+    if (currentToken === lastSessionToken && session) {
+      signOutButton.hidden = false;
+      hideAuthOverlay();
+      return;
+    }
+
     authSession = session;
+
     if (session) {
-      authContainer.remove();
+      hideAuthOverlay();
       signOutButton.hidden = false;
       await fetchOrders();
     } else {
       signOutButton.hidden = true;
+      resetDashboardState();
+      showAuthOverlay();
     }
+
+    lastSessionToken = currentToken;
   }
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  await handleSession(session);
+  // Display overlay while we resolve the current session
+  showAuthOverlay();
+
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    await handleSession(session);
+  } catch (error) {
+    console.error('Error retrieving Supabase session:', error);
+    resetDashboardState();
+    showAuthOverlay();
+  }
 
   supabase.auth.onAuthStateChange((_event, session) => {
     handleSession(session);
   });
 
-  authForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const email = authForm.authEmail.value.trim();
-    const password = authForm.authPassword.value;
+  if (authForm) {
+    authForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (isSigningIn || !authEmailInput || !authPasswordInput) return;
 
-    const domain = email.split('@').pop();
-    if (
-      ALLOWED_EMAIL_DOMAINS.length &&
-      !ALLOWED_EMAIL_DOMAINS.includes(domain)
-    ) {
-      showToast('Email not allowed. Use your business email.');
-      return;
-    }
+      const email = authEmailInput.value.trim();
+      const password = authPasswordInput.value;
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+      const domain = email.split('@').pop();
+      if (
+        ALLOWED_EMAIL_DOMAINS.length &&
+        !ALLOWED_EMAIL_DOMAINS.includes(domain)
+      ) {
+        showToast('Email not allowed. Use your business email.');
+        return;
+      }
+
+      try {
+        isSigningIn = true;
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          console.error('Supabase sign-in error:', error);
+          showToast('Sign in failed. Check your credentials.');
+          return;
+        }
+
+        showToast('Signed in successfully!', 2000);
+      } catch (error) {
+        console.error('Unexpected sign-in error:', error);
+        showToast('Could not sign in. Try again.');
+      } finally {
+        isSigningIn = false;
+      }
     });
-    if (error) {
-      console.error(error);
-      showToast('Could not send link. Try again.');
-      return;
-    }
+  }
 
-    showToast('Magic link sent!', 3200);
-  });
+  if (signOutButton) {
+    signOutButton.hidden = true;
+    signOutButton.addEventListener('click', async () => {
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          console.error('Supabase sign-out error:', error);
+          showToast('Could not sign out. Try again.');
+          return;
+        }
 
-  signOutButton.addEventListener('click', async () => {
-    await supabase.auth.signOut();
-  });
+        showToast('Signed out successfully');
+      } catch (error) {
+        console.error('Unexpected sign-out error:', error);
+        showToast('Could not sign out. Try again.');
+      }
+    });
+  }
 }
 
 function injectAuthStyles() {
@@ -852,8 +1635,11 @@ function init() {
 
   initTabs();
   initDialog();
+  initInvoiceDialog();
   initStatusFilter();
+  initInvoiceFilter();
   initCalendarControls();
+  initClientControls();
   initClientLinkCopy();
   injectAuthStyles();
 
@@ -863,6 +1649,28 @@ function init() {
     fetchOrders();
   }
 }
+
+// Ensure data is refreshed when returning via browser back/forward cache
+window.addEventListener('pageshow', (event) => {
+  const navEntries = performance.getEntriesByType('navigation');
+  const navType = navEntries && navEntries[0] ? navEntries[0].type : null;
+  if (event.persisted || navType === 'back_forward') {
+    fetchOrders().then(() => {
+      // After fetching, ensure the active tab is re-rendered
+      if (activeTab) {
+        switchTab(activeTab);
+      }
+    });
+  }
+});
+
+window.addEventListener('popstate', () => {
+  const params = new URLSearchParams(window.location.search);
+  const tabParam = params.get('tab');
+  if (tabParam && tabParam !== activeTab) {
+    switchTab(tabParam);
+  }
+});
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
