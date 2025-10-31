@@ -1,0 +1,29 @@
+{
+  "name": "Kew Garden Flowers Order Manager",
+  "short_name": "KGF Orders",
+  "description": "Mobile-first florist order management system",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#f6f5f3",
+  "theme_color": "#e0724c",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "screenshots": [],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
+

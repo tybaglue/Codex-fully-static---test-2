@@ -44,7 +44,7 @@ async function submitClientOrder(event) {
     client_email: clientOrderForm.clientEmail.value.trim() || null,
     delivery_date: clientOrderForm.deliveryDate.value || null,
     delivery_address: clientOrderForm.deliveryAddress.value.trim(),
-    order_details: clientOrderForm.orderDetails.value.trim(),
+    card_message: clientOrderForm.cardMessage.value.trim(),
     internal_notes: clientOrderForm.notes.value.trim() || null,
     status: "pending",
     submission_source: "client_form",
