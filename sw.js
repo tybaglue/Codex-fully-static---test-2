@@ -1,12 +1,12 @@
-const CACHE_NAME = 'kgf-orders-v1';
+const CACHE_NAME = 'kgf-orders-v2';
 const OFFLINE_CACHE = 'kgf-offline-v1';
+const HTML_CACHE = 'kgf-html-v1';
 
 // Assets to cache for offline use
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/order.html',
-  '/client.html',
   '/styles.css',
   '/js/app.js',
   '/js/order-form.js',
@@ -43,7 +43,12 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME && name !== OFFLINE_CACHE)
+          .filter(
+            (name) =>
+              name !== CACHE_NAME &&
+              name !== OFFLINE_CACHE &&
+              name !== HTML_CACHE
+          )
           .map((name) => caches.delete(name))
       );
     })
@@ -93,6 +98,30 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Handle navigation/document requests with network-first strategy
+  if (
+    request.mode === 'navigate' ||
+    request.destination === 'document' ||
+    request.headers.get('accept')?.includes('text/html')
+  ) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(HTML_CACHE).then((cache) => {
+            cache.put(request, copy);
+          });
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          return caches.match('/index.html');
+        })
+    );
+    return;
+  }
+
   // For static assets, use cache-first strategy
   event.respondWith(
     caches
@@ -127,4 +156,3 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
-

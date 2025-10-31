@@ -81,6 +81,7 @@ let editingOrderId = null;
 let editingInvoiceId = null;
 let authSession = null;
 let selectedOrdersForInvoice = new Set();
+let activeTab = localStorage.getItem('lastActiveTab') || 'orders';
 
 function showToast(message, duration = 2400) {
   if (!toast) return;
@@ -99,6 +100,7 @@ function setEmptyState(panelId, isVisible) {
 }
 
 function switchTab(targetId) {
+  activeTab = targetId;
   tabButtons.forEach((button) => {
     const isActive = button.dataset.target === targetId;
     button.classList.toggle('active', isActive);
@@ -223,8 +225,10 @@ function clearList(list) {
 }
 
 function renderOrders() {
+  if (!ordersList) return;
   clearList(ordersList);
-  const filter = statusFilter.value;
+
+  const filter = statusFilter ? statusFilter.value : 'all';
 
   const filteredOrders = orders.filter((order) => {
     if (filter === 'all') return true;
@@ -267,12 +271,10 @@ function renderOrders() {
       if (!supabase) return;
 
       const newStatus = order.status === 'fulfilled' ? 'pending' : 'fulfilled';
+      const oldStatus = order.status;
 
       // Optimistic UI update
       order.status = newStatus;
-      pill.dataset.status = newStatus;
-      pill.textContent =
-        newStatus === 'fulfilled' ? 'Fulfilled' : 'Unfulfilled';
 
       const { error } = await supabase
         .from('orders')
@@ -281,18 +283,19 @@ function renderOrders() {
 
       if (error) {
         // Revert on error
-        order.status = newStatus === 'fulfilled' ? 'pending' : 'fulfilled';
-        pill.dataset.status = order.status;
-        pill.textContent =
-          order.status === 'fulfilled' ? 'Fulfilled' : 'Unfulfilled';
+        order.status = oldStatus;
         console.error(error);
         showToast('Could not update status.');
+        renderOrders();
         return;
       }
 
       showToast(
         newStatus === 'fulfilled' ? 'Marked fulfilled' : 'Marked unfulfilled'
       );
+
+      // Re-render to respect current filter
+      renderOrders();
     });
 
     const openButton = clone.querySelector('button');
@@ -732,6 +735,11 @@ async function fetchOrders() {
   renderOrders();
   renderClients();
   renderCalendar();
+
+  // Re-render the currently active tab to ensure latest data appears
+  if (activeTab) {
+    switchTab(activeTab);
+  }
 
   // Also load invoices and bouquet types
   await fetchInvoices();
@@ -1173,26 +1181,38 @@ async function saveInvoice(event) {
 
     // Create invoice items
     if (selectedOrdersForInvoice.size > 0) {
-      const items = Array.from(selectedOrdersForInvoice).map((orderId) => {
-        const order = orders.find((o) => o.id === orderId);
-        return {
-          invoice_id: invoiceId,
-          order_id: orderId,
-          description: `${order.bouquet_type || 'Bouquet'} - ${formatDate(
-            order.delivery_date
-          )}`,
-          quantity: 1,
-          unit_price: parseFloat(order.price_hkd),
-          amount: parseFloat(order.price_hkd),
-        };
-      });
+      const items = Array.from(selectedOrdersForInvoice)
+        .map((orderId) => {
+          // Find order by comparing as strings to handle type mismatches
+          const order = orders.find((o) => String(o.id) === String(orderId));
 
-      const { error: itemsError } = await supabase
-        .from('invoice_items')
-        .insert(items);
+          if (!order) {
+            console.warn(`Order with ID ${orderId} not found in orders array`);
+            return null;
+          }
 
-      if (itemsError) {
-        console.error(itemsError);
+          return {
+            invoice_id: invoiceId,
+            order_id: orderId,
+            description: `${order.bouquet_type || 'Bouquet'} - ${formatDate(
+              order.delivery_date
+            )}`,
+            quantity: 1,
+            unit_price: parseFloat(order.price_hkd) || 0,
+            amount: parseFloat(order.price_hkd) || 0,
+          };
+        })
+        .filter((item) => item !== null); // Remove any null entries
+
+      if (items.length > 0) {
+        const { error: itemsError } = await supabase
+          .from('invoice_items')
+          .insert(items);
+
+        if (itemsError) {
+          console.error('Error creating invoice items:', itemsError);
+          showToast('Invoice created but some items failed to save.');
+        }
       }
     }
   }
@@ -1235,7 +1255,34 @@ async function downloadInvoicePDF(invoice) {
 
 function initTabs() {
   tabButtons.forEach((button) => {
-    button.addEventListener('click', () => switchTab(button.dataset.target));
+    button.addEventListener('click', () => {
+      switchTab(button.dataset.target);
+      // Persist tab selection
+      localStorage.setItem('lastActiveTab', button.dataset.target);
+    });
+  });
+
+  // Restore tab from URL parameter or localStorage
+  const urlParams = new URLSearchParams(window.location.search);
+  const tabParam = urlParams.get('tab');
+  const savedTab = localStorage.getItem('lastActiveTab');
+
+  if (tabParam) {
+    activeTab = tabParam;
+    localStorage.setItem('lastActiveTab', tabParam);
+    // Don't call switchTab yet - let fetchOrders handle rendering after data loads
+  } else if (savedTab) {
+    activeTab = savedTab;
+    // Don't call switchTab yet - let fetchOrders handle rendering after data loads
+  }
+
+  // Set the UI state for active tab button
+  tabButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.target === activeTab);
+  });
+
+  tabPanels.forEach((panel) => {
+    panel.classList.toggle('active', panel.id === activeTab);
   });
 }
 
@@ -1325,34 +1372,93 @@ async function initAuth() {
     return;
   }
 
-  const authContainer = document.createElement('section');
-  authContainer.className = 'auth-overlay';
-  authContainer.innerHTML = `
-    <div class="auth-card">
-      <h2>Sign in</h2>
-      <p>Use your business email and password to access the dashboard.</p>
-      <form id="authForm">
-        <label for="authEmail">Email address</label>
-        <input id="authEmail" type="email" required placeholder="you@kewgardenflowers.com" />
-        <label for="authPassword">Password</label>
-        <input id="authPassword" type="password" required placeholder="Password" minlength="6" />
-        <button type="submit" class="primary-button">Sign in</button>
-      </form>
-      <p class="auth-note">Use the password you set in Supabase Auth.</p>
-    </div>`;
+  let authContainer = null;
+  let authForm = null;
 
-  document.body.appendChild(authContainer);
+  function createAuthOverlay() {
+    // Remove existing overlay if present
+    const existing = document.querySelector('.auth-overlay');
+    if (existing) {
+      existing.remove();
+    }
 
-  const authForm = authContainer.querySelector('#authForm');
+    authContainer = document.createElement('section');
+    authContainer.className = 'auth-overlay';
+    authContainer.innerHTML = `
+      <div class="auth-card">
+        <h2>Sign in</h2>
+        <p>Use your business email and password to access the dashboard.</p>
+        <form id="authForm">
+          <label for="authEmail">Email address</label>
+          <input id="authEmail" type="email" required placeholder="you@kewgardenflowers.com" />
+          <label for="authPassword">Password</label>
+          <input id="authPassword" type="password" required placeholder="Password" minlength="6" />
+          <button type="submit" class="primary-button">Sign in</button>
+        </form>
+        <p class="auth-note">Use the password you set in Supabase Auth.</p>
+      </div>`;
+
+    document.body.appendChild(authContainer);
+    authForm = authContainer.querySelector('#authForm');
+
+    authForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const email = authForm.authEmail.value.trim();
+      const password = authForm.authPassword.value;
+
+      const domain = email.split('@').pop();
+      if (
+        ALLOWED_EMAIL_DOMAINS.length &&
+        !ALLOWED_EMAIL_DOMAINS.includes(domain)
+      ) {
+        showToast('Email not allowed. Use your business email.');
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) {
+        console.error(error);
+        showToast('Sign in failed. Check your credentials.');
+        return;
+      }
+
+      showToast('Signed in successfully!', 2000);
+    });
+  }
 
   async function handleSession(session) {
     authSession = session;
     if (session) {
-      authContainer.remove();
+      // User is signed in - hide auth overlay
+      const overlay = document.querySelector('.auth-overlay');
+      if (overlay) {
+        overlay.remove();
+      }
       signOutButton.hidden = false;
+      // Clear old data and fetch fresh
+      orders = [];
+      invoices = [];
       await fetchOrders();
     } else {
+      // User is signed out - show auth overlay and clear data
       signOutButton.hidden = true;
+      orders = [];
+      invoices = [];
+      // Clear all lists
+      if (ordersList) clearList(ordersList);
+      if (clientsList) clearList(clientsList);
+      if (invoicesList) clearList(invoicesList);
+      if (calendarList) clearList(calendarList);
+      // Show empty states
+      setEmptyState('orders', true);
+      setEmptyState('clients', true);
+      setEmptyState('invoices', true);
+      setEmptyState('calendar', true);
+      // Show auth overlay
+      createAuthOverlay();
     }
   }
 
@@ -1365,35 +1471,9 @@ async function initAuth() {
     handleSession(session);
   });
 
-  authForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const email = authForm.authEmail.value.trim();
-    const password = authForm.authPassword.value;
-
-    const domain = email.split('@').pop();
-    if (
-      ALLOWED_EMAIL_DOMAINS.length &&
-      !ALLOWED_EMAIL_DOMAINS.includes(domain)
-    ) {
-      showToast('Email not allowed. Use your business email.');
-      return;
-    }
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) {
-      console.error(error);
-      showToast('Could not send link. Try again.');
-      return;
-    }
-
-    showToast('Magic link sent!', 3200);
-  });
-
   signOutButton.addEventListener('click', async () => {
     await supabase.auth.signOut();
+    showToast('Signed out successfully');
   });
 }
 
@@ -1469,6 +1549,20 @@ function init() {
     fetchOrders();
   }
 }
+
+// Ensure data is refreshed when returning via browser back/forward cache
+window.addEventListener('pageshow', (event) => {
+  const navEntries = performance.getEntriesByType('navigation');
+  const navType = navEntries && navEntries[0] ? navEntries[0].type : null;
+  if (event.persisted || navType === 'back_forward') {
+    fetchOrders().then(() => {
+      // After fetching, ensure the active tab is re-rendered
+      if (activeTab) {
+        switchTab(activeTab);
+      }
+    });
+  }
+});
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
