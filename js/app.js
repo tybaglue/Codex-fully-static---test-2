@@ -82,6 +82,7 @@ let editingInvoiceId = null;
 let authSession = null;
 let selectedOrdersForInvoice = new Set();
 let activeTab = localStorage.getItem('lastActiveTab') || 'orders';
+let fetchOrdersPromise = null;
 
 function showToast(message, duration = 2400) {
   if (!toast) return;
@@ -101,6 +102,11 @@ function setEmptyState(panelId, isVisible) {
 
 function switchTab(targetId) {
   activeTab = targetId;
+  try {
+    localStorage.setItem('lastActiveTab', targetId);
+  } catch (error) {
+    console.warn('Unable to persist active tab:', error);
+  }
   tabButtons.forEach((button) => {
     const isActive = button.dataset.target === targetId;
     button.classList.toggle('active', isActive);
@@ -171,8 +177,12 @@ function ensureDeliveryTimeOption(value, label = value) {
 
 function formatDeliveryTimeSlot(slotValue) {
   if (!slotValue) return '';
-  const match = DELIVERY_TIME_SLOTS.find((slot) => slot.value === slotValue);
-  return match ? slot.label : slotValue;
+  for (const entry of DELIVERY_TIME_SLOTS) {
+    if (entry.value === slotValue) {
+      return entry.label;
+    }
+  }
+  return slotValue;
 }
 
 // Load bouquet types from database
@@ -242,6 +252,10 @@ function renderOrders() {
   setEmptyState('orders', false);
 
   const template = document.getElementById('orderCardTemplate');
+  if (!template) {
+    console.warn('Order card template not found.');
+    return;
+  }
 
   filteredOrders.forEach((order) => {
     const clone = template.content.firstElementChild.cloneNode(true);
@@ -408,6 +422,10 @@ function renderClients() {
   setEmptyState('clients', false);
 
   const template = document.getElementById('clientCardTemplate');
+  if (!template) {
+    console.warn('Client card template not found.');
+    return;
+  }
 
   clients.forEach((client) => {
     const clone = template.content.firstElementChild.cloneNode(true);
@@ -706,6 +724,10 @@ function closeOrderDialog() {
 }
 
 async function fetchOrders() {
+  if (fetchOrdersPromise) {
+    return fetchOrdersPromise;
+  }
+
   if (!supabase) {
     console.warn(
       'Supabase is not configured. Update js/config.js with your project keys.'
@@ -715,35 +737,41 @@ async function fetchOrders() {
     setEmptyState('clients', true);
     setEmptyState('calendar', true);
     setEmptyState('invoices', true);
-    return;
+    return Promise.resolve();
   }
 
-  const { data, error } = await supabase
+  fetchOrdersPromise = supabase
     .from('orders')
     .select(
       `id, client_id, client_name, client_phone, client_email, delivery_date, bouquet_type, price_hkd, delivery_time_slot, card_message, delivery_address, status, internal_notes, created_at, clients ( client_code )`
     )
-    .order('delivery_date', { ascending: true, nullsFirst: false });
+    .order('delivery_date', { ascending: true, nullsFirst: false })
+    .then(async ({ data, error }) => {
+      if (error) {
+        console.error(error);
+        showToast("Couldn't load orders. Check Supabase settings.");
+        return;
+      }
 
-  if (error) {
-    console.error(error);
-    showToast("Couldn't load orders. Check Supabase settings.");
-    return;
-  }
+      orders = data || [];
+      renderOrders();
+      renderClients();
+      renderCalendar();
 
-  orders = data || [];
-  renderOrders();
-  renderClients();
-  renderCalendar();
+      // Re-render the currently active tab to ensure latest data appears
+      if (activeTab) {
+        switchTab(activeTab);
+      }
 
-  // Re-render the currently active tab to ensure latest data appears
-  if (activeTab) {
-    switchTab(activeTab);
-  }
+      // Also load invoices and bouquet types
+      await fetchInvoices();
+      await loadBouquetTypes();
+    })
+    .finally(() => {
+      fetchOrdersPromise = null;
+    });
 
-  // Also load invoices and bouquet types
-  await fetchInvoices();
-  await loadBouquetTypes();
+  return fetchOrdersPromise;
 }
 
 async function saveOrder(event) {
@@ -863,6 +891,10 @@ function renderInvoices() {
   setEmptyState('invoices', false);
 
   const template = document.getElementById('invoiceCardTemplate');
+  if (!template) {
+    console.warn('Invoice card template not found.');
+    return;
+  }
 
   filteredInvoices.forEach((invoice) => {
     const clone = template.content.firstElementChild.cloneNode(true);
@@ -988,6 +1020,7 @@ async function populateClientDropdown() {
     });
 
   // Listen for client selection change
+  invoiceClientSelect.removeEventListener('change', loadClientOrders);
   invoiceClientSelect.addEventListener('change', loadClientOrders);
 }
 
@@ -1001,6 +1034,12 @@ async function loadClientOrders() {
   }
 
   const client = JSON.parse(invoiceClientSelect.value);
+
+  selectedOrdersForInvoice.clear();
+  if (invoiceForm) {
+    invoiceForm.invoiceSubtotal.value = 'HKD 0.00';
+    invoiceForm.invoiceTotal.value = 'HKD 0.00';
+  }
 
   // Filter orders for this client
   const clientOrders = orders.filter(
@@ -1193,7 +1232,7 @@ async function saveInvoice(event) {
 
           return {
             invoice_id: invoiceId,
-            order_id: orderId,
+            order_id: order.id,
             description: `${order.bouquet_type || 'Bouquet'} - ${formatDate(
               order.delivery_date
             )}`,
@@ -1274,6 +1313,16 @@ function initTabs() {
   } else if (savedTab) {
     activeTab = savedTab;
     // Don't call switchTab yet - let fetchOrders handle rendering after data loads
+  }
+
+  const availableTabs = new Set(tabButtons.map((button) => button.dataset.target));
+  if (!availableTabs.has(activeTab)) {
+    activeTab = 'orders';
+    try {
+      localStorage.setItem('lastActiveTab', activeTab);
+    } catch (error) {
+      console.warn('Unable to persist default tab selection:', error);
+    }
   }
 
   // Set the UI state for active tab button
@@ -1372,16 +1421,8 @@ async function initAuth() {
     return;
   }
 
-  let authContainer = null;
-  let authForm = null;
-
-  function createAuthOverlay() {
-    // Remove existing overlay if present
-    const existing = document.querySelector('.auth-overlay');
-    if (existing) {
-      existing.remove();
-    }
-
+  let authContainer = document.querySelector('.auth-overlay');
+  if (!authContainer) {
     authContainer = document.createElement('section');
     authContainer.className = 'auth-overlay';
     authContainer.innerHTML = `
@@ -1397,14 +1438,92 @@ async function initAuth() {
         </form>
         <p class="auth-note">Use the password you set in Supabase Auth.</p>
       </div>`;
-
     document.body.appendChild(authContainer);
-    authForm = authContainer.querySelector('#authForm');
+  }
 
+  const authForm = authContainer.querySelector('#authForm');
+  const authEmailInput = authForm?.querySelector('#authEmail');
+  const authPasswordInput = authForm?.querySelector('#authPassword');
+
+  function showAuthOverlay() {
+    if (authForm) authForm.reset();
+    authContainer.hidden = false;
+    authContainer.style.display = 'grid';
+    authContainer.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideAuthOverlay() {
+    authContainer.hidden = true;
+    authContainer.style.display = 'none';
+    authContainer.setAttribute('aria-hidden', 'true');
+  }
+
+  function resetDashboardState() {
+    orders = [];
+    invoices = [];
+    if (ordersList) clearList(ordersList);
+    if (clientsList) clearList(clientsList);
+    if (invoicesList) clearList(invoicesList);
+    if (calendarList) clearList(calendarList);
+    setEmptyState('orders', true);
+    setEmptyState('clients', true);
+    setEmptyState('invoices', true);
+    setEmptyState('calendar', true);
+  }
+
+  let isSigningIn = false;
+  let lastSessionToken = null;
+
+  async function handleSession(session) {
+    const currentToken = session?.access_token || null;
+
+    // Avoid duplicate work if the session is unchanged
+    if (currentToken === lastSessionToken && session) {
+      signOutButton.hidden = false;
+      hideAuthOverlay();
+      return;
+    }
+
+    authSession = session;
+
+    if (session) {
+      hideAuthOverlay();
+      signOutButton.hidden = false;
+      await fetchOrders();
+    } else {
+      signOutButton.hidden = true;
+      resetDashboardState();
+      showAuthOverlay();
+    }
+
+    lastSessionToken = currentToken;
+  }
+
+  // Display overlay while we resolve the current session
+  showAuthOverlay();
+
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    await handleSession(session);
+  } catch (error) {
+    console.error('Error retrieving Supabase session:', error);
+    resetDashboardState();
+    showAuthOverlay();
+  }
+
+  supabase.auth.onAuthStateChange((_event, session) => {
+    handleSession(session);
+  });
+
+  if (authForm) {
     authForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const email = authForm.authEmail.value.trim();
-      const password = authForm.authPassword.value;
+      if (isSigningIn || !authEmailInput || !authPasswordInput) return;
+
+      const email = authEmailInput.value.trim();
+      const password = authPasswordInput.value;
 
       const domain = email.split('@').pop();
       if (
@@ -1415,66 +1534,47 @@ async function initAuth() {
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) {
-        console.error(error);
-        showToast('Sign in failed. Check your credentials.');
-        return;
-      }
+      try {
+        isSigningIn = true;
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
 
-      showToast('Signed in successfully!', 2000);
+        if (error) {
+          console.error('Supabase sign-in error:', error);
+          showToast('Sign in failed. Check your credentials.');
+          return;
+        }
+
+        showToast('Signed in successfully!', 2000);
+      } catch (error) {
+        console.error('Unexpected sign-in error:', error);
+        showToast('Could not sign in. Try again.');
+      } finally {
+        isSigningIn = false;
+      }
     });
   }
 
-  async function handleSession(session) {
-    authSession = session;
-    if (session) {
-      // User is signed in - hide auth overlay
-      const overlay = document.querySelector('.auth-overlay');
-      if (overlay) {
-        overlay.remove();
+  if (signOutButton) {
+    signOutButton.hidden = true;
+    signOutButton.addEventListener('click', async () => {
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          console.error('Supabase sign-out error:', error);
+          showToast('Could not sign out. Try again.');
+          return;
+        }
+
+        showToast('Signed out successfully');
+      } catch (error) {
+        console.error('Unexpected sign-out error:', error);
+        showToast('Could not sign out. Try again.');
       }
-      signOutButton.hidden = false;
-      // Clear old data and fetch fresh
-      orders = [];
-      invoices = [];
-      await fetchOrders();
-    } else {
-      // User is signed out - show auth overlay and clear data
-      signOutButton.hidden = true;
-      orders = [];
-      invoices = [];
-      // Clear all lists
-      if (ordersList) clearList(ordersList);
-      if (clientsList) clearList(clientsList);
-      if (invoicesList) clearList(invoicesList);
-      if (calendarList) clearList(calendarList);
-      // Show empty states
-      setEmptyState('orders', true);
-      setEmptyState('clients', true);
-      setEmptyState('invoices', true);
-      setEmptyState('calendar', true);
-      // Show auth overlay
-      createAuthOverlay();
-    }
+    });
   }
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  await handleSession(session);
-
-  supabase.auth.onAuthStateChange((_event, session) => {
-    handleSession(session);
-  });
-
-  signOutButton.addEventListener('click', async () => {
-    await supabase.auth.signOut();
-    showToast('Signed out successfully');
-  });
 }
 
 function injectAuthStyles() {
@@ -1561,6 +1661,14 @@ window.addEventListener('pageshow', (event) => {
         switchTab(activeTab);
       }
     });
+  }
+});
+
+window.addEventListener('popstate', () => {
+  const params = new URLSearchParams(window.location.search);
+  const tabParam = params.get('tab');
+  if (tabParam && tabParam !== activeTab) {
+    switchTab(tabParam);
   }
 });
 

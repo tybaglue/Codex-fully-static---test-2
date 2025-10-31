@@ -8,10 +8,6 @@ const STATIC_ASSETS = [
   '/index.html',
   '/order.html',
   '/styles.css',
-  '/js/app.js',
-  '/js/order-form.js',
-  '/js/client.js',
-  '/js/config.js',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -94,6 +90,20 @@ self.addEventListener('fetch', (event) => {
             );
           });
         })
+    );
+    return;
+  }
+
+  // Always prefer the network for JavaScript bundles to avoid stale caches
+  if (request.destination === 'script') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          return response;
+        })
+        .catch(() => caches.match(request))
     );
     return;
   }
